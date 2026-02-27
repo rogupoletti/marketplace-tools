@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useAuth } from "@/lib/auth-context";
 
 interface HeaderProps {
     brand?: "shopee" | "meli" | "amazon" | "default";
@@ -9,6 +10,7 @@ interface HeaderProps {
 
 export default function Header({ brand = "default" }: HeaderProps) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const { user, userData, logout } = useAuth();
 
     const isShopee = brand === "shopee";
     const isMeli = brand === "meli";
@@ -24,7 +26,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
                 <Link href="/" className="flex items-center gap-3 group transition-opacity hover:opacity-90">
                     <div className={`w-10 h-10 ${bgColor} rounded-lg flex items-center justify-center`}>
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+                            <path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path>
                         </svg>
                     </div>
                     <div>
@@ -58,6 +60,25 @@ export default function Header({ brand = "default" }: HeaderProps) {
                     <Link href="/shopee" className={`text-sm font-medium ${isShopee ? 'text-primary border-b-2 border-primary' : 'text-gray-600'} hover:text-primary transition-colors flex items-center h-full px-1 cursor-pointer`}>Shopee</Link>
                     <Link href="/meli" className={`text-sm font-medium ${isMeli ? 'text-meli-secondary border-b-2 border-meli-secondary' : 'text-gray-600'} hover:text-meli-secondary transition-colors flex items-center h-full px-1 cursor-pointer`}>Mercado Livre</Link>
                     <Link href="/amazon" className={`text-sm font-medium ${isAmazon ? 'text-[#FF9900] border-b-2 border-[#FF9900]' : 'text-gray-600'} hover:text-[#FF9900] transition-colors flex items-center h-full px-1 cursor-pointer`}>Amazon</Link>
+
+                    <div className="h-6 w-px bg-gray-200 mx-2"></div>
+
+                    {user ? (
+                        <>
+                            <Link href="/dash" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer">Meus Relatórios</Link>
+                            {userData?.isAdmin && (
+                                <Link href="/admin" className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">Admin</Link>
+                            )}
+                            <button
+                                onClick={() => logout()}
+                                className="text-sm font-medium text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+                            >
+                                Sair
+                            </button>
+                        </>
+                    ) : (
+                        <Link href="/login" className="text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-xl shadow-md shadow-blue-100 transition-all active:scale-95 cursor-pointer">Login</Link>
+                    )}
                 </nav>
             </div>
 
@@ -93,6 +114,46 @@ export default function Header({ brand = "default" }: HeaderProps) {
                         >
                             Amazon
                         </Link>
+
+                        <div className="border-t border-gray-100 my-2 pt-2">
+                            {user ? (
+                                <>
+                                    <Link
+                                        href="/dash"
+                                        onClick={() => setIsMenuOpen(false)}
+                                        className="block px-3 py-2 rounded-md text-base font-bold text-blue-600 hover:bg-gray-50 cursor-pointer"
+                                    >
+                                        Meus Relatórios
+                                    </Link>
+                                    {userData?.isAdmin && (
+                                        <Link
+                                            href="/admin"
+                                            onClick={() => setIsMenuOpen(false)}
+                                            className="block px-3 py-2 rounded-md text-base font-bold text-gray-900 hover:bg-gray-50 cursor-pointer"
+                                        >
+                                            Painel Admin
+                                        </Link>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            logout();
+                                            setIsMenuOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-500 hover:bg-gray-50 cursor-pointer"
+                                    >
+                                        Sair
+                                    </button>
+                                </>
+                            ) : (
+                                <Link
+                                    href="/login"
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="block px-3 py-2 rounded-md text-base font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                                >
+                                    Login
+                                </Link>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
