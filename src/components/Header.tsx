@@ -57,9 +57,35 @@ export default function Header({ brand = "default" }: HeaderProps) {
                 {/* Desktop menu */}
                 <nav className="hidden md:flex items-center space-x-8 h-full">
                     <Link href="/" className="text-sm font-medium text-gray-600 hover:text-primary transition-colors cursor-pointer">Home</Link>
-                    <Link href="/shopee" className={`text-sm font-medium ${isShopee ? 'text-primary border-b-2 border-primary' : 'text-gray-600'} hover:text-primary transition-colors flex items-center h-full px-1 cursor-pointer`}>Shopee</Link>
-                    <Link href="/meli" className={`text-sm font-medium ${isMeli ? 'text-meli-secondary border-b-2 border-meli-secondary' : 'text-gray-600'} hover:text-meli-secondary transition-colors flex items-center h-full px-1 cursor-pointer`}>Mercado Livre</Link>
-                    <Link href="/amazon" className={`text-sm font-medium ${isAmazon ? 'text-[#FF9900] border-b-2 border-[#FF9900]' : 'text-gray-600'} hover:text-[#FF9900] transition-colors flex items-center h-full px-1 cursor-pointer`}>Amazon</Link>
+
+                    {/* Calculadoras Dropdown */}
+                    <div className="relative group h-full flex items-center">
+                        <button className={`text-sm font-medium flex items-center gap-1 h-full px-1 cursor-pointer transition-colors ${isShopee || isMeli || isAmazon ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600 hover:text-blue-600'
+                            }`}>
+                            Calculadoras
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+
+                        <div className="absolute top-full left-0 w-48 bg-white rounded-b-xl shadow-lg border border-gray-100 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                            <Link href="/shopee" className={`block px-4 py-2 text-sm font-medium ${isShopee ? 'text-primary bg-orange-50' : 'text-gray-600'} hover:text-primary hover:bg-gray-50 transition-colors cursor-pointer`}>
+                                Shopee
+                            </Link>
+                            <Link href="/meli" className={`block px-4 py-2 text-sm font-medium ${isMeli ? 'text-meli-secondary bg-blue-50' : 'text-gray-600'} hover:text-meli-secondary hover:bg-gray-50 transition-colors cursor-pointer`}>
+                                Mercado Livre
+                            </Link>
+                            <Link href="/amazon" className={`block px-4 py-2 text-sm font-medium ${isAmazon ? 'text-[#FF9900] bg-yellow-50' : 'text-gray-600'} hover:text-[#FF9900] hover:bg-gray-50 transition-colors cursor-pointer`}>
+                                Amazon
+                            </Link>
+                        </div>
+                    </div>
+
+                    {user && (
+                        <Link href="/reposicao-full" className="text-sm font-medium text-gray-600 hover:text-[#2d3277] transition-colors cursor-pointer h-full flex items-center px-1">
+                            Reposição Full
+                        </Link>
+                    )}
 
                     <div className="h-6 w-px bg-gray-200 mx-2"></div>
 
