@@ -1,11 +1,18 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useUI } from "@/lib/ui-context";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { SHOPEE_RATES } from "@/data/shopeeData";
 
 
-export default function ShopeePage() {
+export default function ShopeeCalculator() {
+    const { user, loading } = useAuth();
+    const { showAlert } = useUI();
+    const router = useRouter();
+
     const [mode, setMode] = useState<"suggest" | "evaluate">("suggest");
     const [productCost, setProductCost] = useState<number | "">(150);
     const [targetMargin, setTargetMargin] = useState<number | "">(20);
@@ -263,7 +270,7 @@ export default function ShopeePage() {
                             <button
                                 onClick={() => {
                                     navigator.clipboard.writeText(results.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                    alert("Preço copiado!");
+                                    showAlert("Copiado", "Preço copiado!", "success");
                                 }}
                                 className="w-full py-3 bg-primary text-white font-bold rounded-lg hover:bg-[#d44327] transition-colors cursor-pointer"
                             >

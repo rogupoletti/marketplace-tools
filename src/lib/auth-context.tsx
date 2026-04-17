@@ -9,9 +9,21 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
+export interface UserData {
+    email: string;
+    isAdmin?: boolean; // Legacy
+    requiresPasswordChange?: boolean;
+    createdAt?: string;
+
+    // New Roles properties
+    role?: "superadmin" | "account_admin" | "account_user" | "subaccount_user";
+    accountId?: string | null;
+    subAccountIds?: string[] | null;
+}
+
 interface AuthContextType {
     user: User | null;
-    userData: any | null;
+    userData: UserData | null;
     loading: boolean;
     logout: () => Promise<void>;
     refreshUserData: () => Promise<void>;

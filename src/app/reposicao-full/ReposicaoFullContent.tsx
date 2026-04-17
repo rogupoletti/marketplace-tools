@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useUI } from "@/lib/ui-context";
 import { useReposicaoState } from "./useReposicaoState";
 import { UploadSection } from "./components/UploadSection";
 import { SummaryCards } from "./components/SummaryCards";
@@ -15,7 +16,8 @@ import { utils, writeFile } from 'xlsx';
 
 export function ReposicaoFullContent() {
     const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, recalcularAgora, limparDados } = useReposicaoState();
-    const { user, loading } = useAuth();
+    const { user, loading, userData } = useAuth();
+    const { showAlert, showConfirm } = useUI();
     const router = useRouter();
 
     const [editingSku, setEditingSku] = useState<string | null>(null);
@@ -24,10 +26,14 @@ export function ReposicaoFullContent() {
     const [isRemessaModalOpen, setIsRemessaModalOpen] = useState(false);
 
     useEffect(() => {
-        if (!loading && !user) {
-            router.push("/login");
+        if (!loading) {
+            if (!user) {
+                router.push("/login");
+            } else if (userData?.role === 'subaccount_user') {
+                router.push("/dash");
+            }
         }
-    }, [user, loading, router]);
+    }, [user, loading, router, userData]);
 
     const stats = useMemo(() => {
         let rupturasFull = 0;
@@ -68,7 +74,7 @@ export function ReposicaoFullContent() {
 
     const handleExecuteExport = (type: 'full' | 'filtered') => {
         const data = type === 'full' ? produtosProcessados : produtosFiltrados;
-        if (data.length === 0) return alert("Nenhum dado para exportar.");
+        if (data.length === 0) return showAlert("Aviso", "Nenhum dado para exportar.", "warning");
 
         const exportData = data.map(p => ({
             "SKU": p.sku,
@@ -114,44 +120,46 @@ export function ReposicaoFullContent() {
         const sourceData = type === 'full' ? produtosProcessados : produtosFiltrados;
         const toShip = sourceData.filter(p => p.sugestaoReposicao > 0);
         
-        if (toShip.length === 0) return alert("Nenhum produto tem sugestão de reposição > 0.");
+        if (toShip.length === 0) return showAlert("Aviso", "Nenhum produto tem sugestão de reposição > 0.", "warning");
 
         const totalUnits = toShip.reduce((acc, p) => acc + p.sugestaoReposicao, 0);
         const typeLabel = type === 'full' ? 'Completa' : 'Filtrada';
-        if (!window.confirm(`Criar remessa ${typeLabel} para ${toShip.length} SKUs totalizando ${totalUnits} unidades?`)) return;
 
-        // Header Row
-        const rows: any[][] = [
-            ["SKU", "Cód Universal", "Código ML", "N. do Anúncio", "N. da Variação", "Qtd de unidades"]
-        ];
+        showConfirm("Criar Remessa", `Criar remessa ${typeLabel} para ${toShip.length} SKUs totalizando ${totalUnits} unidades?`, () => {
+            // Header Row
+            const rows: any[][] = [
+                ["SKU", "Cód Universal", "Código ML", "N. do Anúncio", "N. da Variação", "Qtd de unidades"]
+            ];
 
-        // Empty rows (2, 3, 4, 5)
-        for (let i = 0; i < 4; i++) {
-            rows.push(["", "", "", "", "", ""]);
-        }
+            // Empty rows (2, 3, 4, 5)
+            for (let i = 0; i < 4; i++) {
+                rows.push(["", "", "", "", "", ""]);
+            }
 
-        // Data starting from row 6
-        toShip.forEach(p => {
-            // N. do Anúncio logic: use mlbCatalogo if valid, otherwise fallback to mlb
-            const mlbCat = String(p.mlbCatalogo || "").trim();
-            const isMlbCatInvalid = !mlbCat || mlbCat.toUpperCase() === "NULL" || mlbCat.toUpperCase() === "#N/D";
-            
-            const mlbAnuncio = !isMlbCatInvalid ? mlbCat : p.mlb;
+            // Data starting from row 6
+            toShip.forEach(p => {
+                // N. do Anúncio logic: use mlbCatalogo if valid, otherwise fallback to mlb
+                const mlbCat = String(p.mlbCatalogo || "").trim();
+                const isMlbCatInvalid = !mlbCat || mlbCat.toUpperCase() === "NULL" || mlbCat.toUpperCase() === "#N/D";
+                
+                const mlbAnuncio = !isMlbCatInvalid ? mlbCat : p.mlb;
 
-            rows.push([
-                p.sku,
-                "", // Cód Universal (must be blank)
-                "", // Código ML (must be blank)
-                mlbAnuncio || "", // N. do Anúncio
-                "", // N. da Variação (must be blank)
-                p.sugestaoReposicao
-            ]);
+                rows.push([
+                    p.sku,
+                    "", // Cód Universal (must be blank)
+                    "", // Código ML (must be blank)
+                    mlbAnuncio || "", // N. do Anúncio
+                    "", // N. da Variação (must be blank)
+                    p.sugestaoReposicao
+                ]);
+            });
+
+            const ws = utils.aoa_to_sheet(rows);
+            const wb = utils.book_new();
+            utils.book_append_sheet(wb, ws, "Remessa");
+            writeFile(wb, `remessa_full_${typeLabel.toLowerCase()}.xlsx`);
+            showAlert("Sucesso", "Remessa gerada com sucesso!", "success");
         });
-
-        const ws = utils.aoa_to_sheet(rows);
-        const wb = utils.book_new();
-        utils.book_append_sheet(wb, ws, "Remessa");
-        writeFile(wb, `remessa_full_${typeLabel.toLowerCase()}.xlsx`);
     };
 
 
@@ -167,7 +175,7 @@ export function ReposicaoFullContent() {
                 <div className="flex flex-wrap gap-3">
                     <button
                         onClick={() => {
-                            if (selectedSkus.length === 0) return alert("Selecione pelo menos um produto na tabela.");
+                            if (selectedSkus.length === 0) return showAlert("Aviso", "Selecione pelo menos um produto na tabela.", "warning");
                             setBulkEditParams({ isOpen: true });
                         }}
                         className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
@@ -230,9 +238,10 @@ export function ReposicaoFullContent() {
                         </span>
                         <button
                             onClick={() => {
-                                if (window.confirm("Isso apagará os dados atuais para subir uma nova base. Deseja continuar?")) {
+                                showConfirm("Sincronizar Dados", "Isso apagará os dados atuais para subir uma nova base. Deseja continuar?", () => {
                                     limparDados();
-                                }
+                                    showAlert("Sucesso", "Dados limpos. Você pode subir uma nova base agora.", "success");
+                                });
                             }}
                             className="flex items-center gap-1.5 text-[#2d3277] font-semibold hover:text-[#2d3277]/80 cursor-pointer"
                         >

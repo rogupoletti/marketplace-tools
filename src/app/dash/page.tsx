@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useUI } from "@/lib/ui-context";
 import { useRouter } from "next/navigation";
 import {
     collection,
@@ -16,11 +17,13 @@ import { db, auth } from "@/lib/firebase";
 
 export default function UserDashboard() {
     const { user, userData, loading, logout, refreshUserData } = useAuth();
+    const { showAlert } = useUI();
     const router = useRouter();
     const [pages, setPages] = useState<any[]>([]);
     const [selectedPage, setSelectedPage] = useState<any | null>(null);
     const [fetching, setFetching] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
     // Password change states
     const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -42,11 +45,11 @@ export default function UserDashboard() {
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
-            alert("As senhas não coincidem!");
+            showAlert("Erro", "As senhas não coincidem!", "error");
             return;
         }
         if (newPassword.length < 6) {
-            alert("A senha deve ter no mínimo 6 caracteres!");
+            showAlert("Erro", "A senha deve ter no mínimo 6 caracteres!", "error");
             return;
         }
 
@@ -58,12 +61,12 @@ export default function UserDashboard() {
                     requiresPasswordChange: false
                 });
                 await refreshUserData();
-                alert("Senha alterada com sucesso!");
+                showAlert("Sucesso", "Senha alterada com sucesso!", "success");
                 setShowPasswordModal(false);
             }
         } catch (error: any) {
             console.error("Error updating password:", error);
-            alert("Erro ao atualizar senha: " + error.message);
+            showAlert("Erro", "Erro ao atualizar senha: " + error.message, "error");
         } finally {
             setIsChangingPassword(false);
         }
@@ -73,18 +76,36 @@ export default function UserDashboard() {
         if (!user?.email) return;
         setFetching(true);
         try {
-            const q = query(
-                collection(db, "pages"),
-                where("allowedUsers", "array-contains", user.email)
-            );
-            const querySnapshot = await getDocs(q);
-            const pagesList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let pagesList: any[] = [];
+            
+            // se nao tem role ainda (legado) ou se precisamos carregar
+            if (userData?.role === 'superadmin') {
+                const querySnapshot = await getDocs(collection(db, "pages"));
+                pagesList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            } else if (userData?.role === 'account_admin' || userData?.role === 'account_user') {
+                if (userData.accountId) {
+                    const q1 = query(collection(db, "pages"), where("accountId", "==", userData.accountId));
+                    const querySnapshot = await getDocs(q1);
+                    pagesList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                }
+            } else if (userData?.role === 'subaccount_user') {
+                if (userData.subAccountIds && userData.subAccountIds.length > 0) {
+                    // split query if subAccountIds > 10 (firebase array-contains-any limit is 10)
+                    // assuming here it won't exceed 10 usually, for simplicity
+                    const chunk = userData.subAccountIds.slice(0, 10);
+                    const q1 = query(collection(db, "pages"), where("subAccountIds", "array-contains-any", chunk));
+                    const querySnapshot = await getDocs(q1);
+                    pagesList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                }
+            }
+
             setPages(pagesList);
             if (pagesList.length > 0) {
                 setSelectedPage(pagesList[0]);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error fetching pages:", error);
+            setNotification({ type: "error", message: "Erro ao buscar relatórios: " + (error?.message || "Erro desconhecido") });
         } finally {
             setFetching(false);
         }
@@ -109,6 +130,16 @@ export default function UserDashboard() {
                 absolute md:relative z-50 w-80 h-full bg-white border-r border-gray-200 flex flex-col shadow-sm transition-transform duration-300
                 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
             `}>
+                {/* Notificação */}
+                {notification && (
+                    <div className="fixed top-5 right-5 z-[100]">
+                        <div className={`${notification.type === 'success' ? 'bg-green-600' : 'bg-red-600'} text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 min-w-[300px]`}>
+                            <div className="flex-1 text-sm">{notification.message}</div>
+                            <button onClick={() => setNotification(null)} className="ml-2 bg-white/20 hover:bg-white/30 p-1 rounded-lg cursor-pointer">OK</button>
+                        </div>
+                    </div>
+                )}
+
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center">
                     <div>
                         <h2 className="text-2xl font-bold text-gray-900">Meus Relatórios</h2>

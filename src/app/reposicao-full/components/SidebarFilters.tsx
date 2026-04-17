@@ -50,7 +50,7 @@ export function SidebarFilters({ isPopover, onClose }: { isPopover?: boolean; on
                         Limpar
                     </button>
                     {isPopover && (
-                        <button onClick={onClose} className="text-xs font-bold text-gray-400 hover:text-gray-600">Fechar</button>
+                        <button onClick={onClose} className="text-xs font-bold text-gray-400 hover:text-gray-600 cursor-pointer">Fechar</button>
                     )}
                 </div>
             </div>
@@ -152,7 +152,7 @@ export function SidebarFilters({ isPopover, onClose }: { isPopover?: boolean; on
                 <div className="pt-4 mt-auto border-t border-gray-100 shrink-0">
                     <button 
                         onClick={onClose}
-                        className="w-full py-2 bg-[#2d3277] text-white text-xs font-bold rounded-lg"
+                        className="w-full py-2 bg-[#2d3277] text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-[#1e2255]"
                     >
                         Ver Resultados
                     </button>

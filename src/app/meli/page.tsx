@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useUI } from "@/lib/ui-context";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { MELI_CATEGORIES, MELI_LOGISTICS, getMeliFlatFee, MELI_FULL_STORAGE_SIZES, MELI_SUPER_STORAGE_SIZES } from "@/data/meliData";
 
 const FLAT_FEE_THRESHOLD = 79.00;
 
 export default function MeliPage() {
+    const { user, loading } = useAuth();
+    const { showAlert } = useUI();
+    const router = useRouter();
+
     const [mode, setMode] = useState<"suggest" | "evaluate">("suggest");
     const [productCost, setProductCost] = useState<number | "">(150);
     const [targetMargin, setTargetMargin] = useState<number | "">(20);
@@ -321,7 +328,7 @@ export default function MeliPage() {
                                         </div>
                                         <button
                                             onClick={() => setIsSuperCategory(!isSuperCategory)}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isSuperCategory ? "bg-green-500" : "bg-gray-200"}`}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer ${isSuperCategory ? "bg-green-500" : "bg-gray-200"}`}
                                         >
                                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSuperCategory ? "translate-x-6" : "translate-x-1"}`} />
                                         </button>
@@ -336,7 +343,7 @@ export default function MeliPage() {
                                         </div>
                                         <button
                                             onClick={() => setOfferFreeShipping(!offerFreeShipping)}
-                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${offerFreeShipping ? "bg-meli-secondary" : "bg-gray-200"}`}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer ${offerFreeShipping ? "bg-meli-secondary" : "bg-gray-200"}`}
                                         >
                                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${offerFreeShipping ? "translate-x-6" : "translate-x-1"}`} />
                                         </button>
@@ -461,7 +468,7 @@ export default function MeliPage() {
                             <button
                                 onClick={() => {
                                     navigator.clipboard.writeText(results.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                    alert("Preço copiado!");
+                                    showAlert("Copiado", "Preço copiado!", "success");
                                 }}
                                 className="w-full py-3 bg-meli-secondary text-white font-bold rounded-lg hover:opacity-90 transition-colors cursor-pointer"
                             >

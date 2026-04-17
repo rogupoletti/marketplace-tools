@@ -92,7 +92,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
                     {user ? (
                         <>
                             <Link href="/dash" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer">Meus Relatórios</Link>
-                            {userData?.isAdmin && (
+                            {(userData?.isAdmin || userData?.role === 'superadmin' || userData?.role === 'account_admin') && (
                                 <Link href="/admin" className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">Admin</Link>
                             )}
                             <button
@@ -151,7 +151,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
                                     >
                                         Meus Relatórios
                                     </Link>
-                                    {userData?.isAdmin && (
+                                    {(userData?.isAdmin || userData?.role === 'superadmin' || userData?.role === 'account_admin') && (
                                         <Link
                                             href="/admin"
                                             onClick={() => setIsMenuOpen(false)}

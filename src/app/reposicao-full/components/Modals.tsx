@@ -116,7 +116,7 @@ export function Modals({
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">Editar Produto</h3>
-                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors cursor-pointer">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -200,10 +200,10 @@ export function Modals({
                         </div>
 
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 rounded-b-2xl">
-                            <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                            <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
                                 Cancelar
                             </button>
-                            <button onClick={handleSaveSingle} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm">
+                            <button onClick={handleSaveSingle} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer">
                                 Salvar Alterações
                             </button>
                         </div>
@@ -221,7 +221,7 @@ export function Modals({
                                 <h3 className="text-lg font-bold text-gray-900">Edição em Massa</h3>
                                 <p className="text-xs text-[#2d3277] font-semibold mt-0.5">{selectedSkus.length} produtos selecionados</p>
                             </div>
-                            <button onClick={onCloseBulk} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            <button onClick={onCloseBulk} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors cursor-pointer">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -303,10 +303,10 @@ export function Modals({
                         </div>
 
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 rounded-b-2xl">
-                            <button onClick={onCloseBulk} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                            <button onClick={onCloseBulk} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
                                 Cancelar
                             </button>
-                            <button onClick={handleSaveBulk} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm">
+                            <button onClick={handleSaveBulk} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer">
                                 Aplicar em {selectedSkus.length} produtos
                             </button>
                         </div>
@@ -319,7 +319,7 @@ export function Modals({
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">Exportar Dados</h3>
-                            <button onClick={onCloseExport} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            <button onClick={onCloseExport} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors cursor-pointer">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -352,7 +352,7 @@ export function Modals({
                         </div>
 
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-center rounded-b-2xl">
-                            <button onClick={onCloseExport} className="text-sm font-medium text-gray-500 hover:text-gray-700">
+                            <button onClick={onCloseExport} className="text-sm font-medium text-gray-500 hover:text-gray-700 cursor-pointer">
                                 Cancelar
                             </button>
                         </div>
@@ -365,7 +365,7 @@ export function Modals({
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">Criar Remessa</h3>
-                            <button onClick={onCloseRemessa} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            <button onClick={onCloseRemessa} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors cursor-pointer">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -398,7 +398,7 @@ export function Modals({
                         </div>
 
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-center rounded-b-2xl">
-                            <button onClick={onCloseRemessa} className="text-sm font-medium text-gray-500 hover:text-gray-700">
+                            <button onClick={onCloseRemessa} className="text-sm font-medium text-gray-500 hover:text-gray-700 cursor-pointer">
                                 Cancelar
                             </button>
                         </div>

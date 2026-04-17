@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useUI } from "@/lib/ui-context";
+import { useRouter } from "next/navigation";
 import { AMAZON_CATEGORIES, AMAZON_LOGISTICS, AMAZON_FBA_STORAGE_SIZES } from "@/data/amazonData";
 
 export default function AmazonPage() {
+    const { user, loading } = useAuth();
+    const { showAlert } = useUI();
+    const router = useRouter();
+
     const [mode, setMode] = useState<"suggest" | "evaluate">("suggest");
     const [productCost, setProductCost] = useState<number | "">(150);
     const [targetMargin, setTargetMargin] = useState<number | "">(20);
@@ -443,7 +450,7 @@ export default function AmazonPage() {
                             <button
                                 onClick={() => {
                                     navigator.clipboard.writeText(results.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                    alert("Preço copiado!");
+                                    showAlert("Copiado", "Preço copiado!", "success");
                                 }}
                                 className="w-full py-3 bg-secondary text-white font-bold rounded-lg hover:opacity-90 transition-colors cursor-pointer"
                             >

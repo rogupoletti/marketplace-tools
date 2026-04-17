@@ -17,7 +17,7 @@ export function GlobalParams({ isPopover, onClose }: { isPopover?: boolean; onCl
                     <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Parâmetros Globais</h2>
                 </div>
                 {isPopover && (
-                    <button onClick={onClose} className="text-xs font-bold text-gray-400 hover:text-gray-600">Fechar</button>
+                    <button onClick={onClose} className="text-xs font-bold text-gray-400 hover:text-gray-600 cursor-pointer">Fechar</button>
                 )}
             </div>
 
@@ -79,7 +79,7 @@ export function GlobalParams({ isPopover, onClose }: { isPopover?: boolean; onCl
                     <div className="flex bg-gray-100 p-1 rounded-xl w-full h-10 mb-[2px]">
                         <button
                             onClick={() => setParametros({ usarMediaGlobal: true })}
-                            className={`flex-1 rounded-lg text-xs font-bold transition-all ${parametros.usarMediaGlobal
+                            className={`flex-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${parametros.usarMediaGlobal
                                     ? 'bg-white text-[#2d3277] shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700'
                                 }`}
@@ -88,7 +88,7 @@ export function GlobalParams({ isPopover, onClose }: { isPopover?: boolean; onCl
                         </button>
                         <button
                             onClick={() => setParametros({ usarMediaGlobal: false })}
-                            className={`flex-1 rounded-lg text-xs font-bold transition-all ${!parametros.usarMediaGlobal
+                            className={`flex-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${!parametros.usarMediaGlobal
                                     ? 'bg-white text-[#2d3277] shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700'
                                 }`}
@@ -103,7 +103,7 @@ export function GlobalParams({ isPopover, onClose }: { isPopover?: boolean; onCl
                 <div className="pt-4 mt-4 border-t border-gray-100 shrink-0">
                     <button 
                         onClick={onClose}
-                        className="w-full py-2 bg-[#2d3277] text-white text-xs font-bold rounded-lg"
+                        className="w-full py-2 bg-[#2d3277] text-white text-xs font-bold rounded-lg cursor-pointer hover:bg-[#1e2255]"
                     >
                         Concluído
                     </button>

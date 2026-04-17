@@ -209,7 +209,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                     <div className="relative">
                         <button 
                             onClick={() => setIsSelectorOpen(!isSelectorOpen)}
-                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
                         >
                             <Layout className="w-4 h-4 text-gray-400" />
                             Colunas
@@ -219,7 +219,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                             <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 flex flex-col h-[400px]">
                                 <div className="p-3 border-b border-gray-100 flex items-center justify-between shrink-0">
                                     <span className="text-xs font-bold text-gray-900 uppercase">Configurar Colunas</span>
-                                    <button onClick={resetColumns} className="text-[10px] text-[#2d3277] hover:underline flex items-center gap-1 font-bold">
+                                    <button onClick={resetColumns} className="text-[10px] text-[#2d3277] hover:underline flex items-center gap-1 font-bold cursor-pointer">
                                         <RotateCcw className="w-3 h-3" /> Resetar
                                     </button>
                                 </div>
@@ -235,11 +235,11 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                                                 onDrop={(e) => handleDrop(e, id)}
                                                 className={`flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 rounded-lg cursor-move transition-colors border-2 ${draggedColumn === id ? 'opacity-50 border-dashed border-[#2d3277]' : 'border-transparent'} ${dragOverColumn === id ? 'bg-blue-50 border-l-[#2d3277]' : ''}`}
                                             >
-                                                <div className="flex items-center gap-2" onClick={() => toggleColumn(id)}>
+                                                <div className="flex items-center gap-2 cursor-pointer" onClick={() => toggleColumn(id)}>
                                                     <GripVertical className="w-3 h-3 text-gray-400" />
                                                     <span className="text-xs font-bold text-gray-900">{COLUMN_LABELS[id] || id}</span>
                                                 </div>
-                                                <Check className="w-3.5 h-3.5 text-green-500" onClick={() => toggleColumn(id)} />
+                                                <Check className="w-3.5 h-3.5 text-green-500 cursor-pointer" onClick={() => toggleColumn(id)} />
                                             </div>
                                         ))}
                                     </div>
@@ -268,7 +268,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                                 <div className="p-3 border-t border-gray-100 shrink-0">
                                     <button 
                                         onClick={() => setIsSelectorOpen(false)}
-                                        className="w-full py-2 bg-[#2d3277] text-white text-xs font-bold rounded-lg hover:bg-[#1e2255] transition-colors shadow-sm"
+                                        className="w-full py-2 bg-[#2d3277] text-white text-xs font-bold rounded-lg hover:bg-[#1e2255] transition-colors shadow-sm cursor-pointer"
                                     >
                                         Concluir
                                     </button>
@@ -281,7 +281,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                     <div className="relative">
                         <button 
                             onClick={() => setIsFiltersOpen(!isFiltersOpen)}
-                            className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-xs font-semibold transition-colors shadow-sm ${filtros.status.length > 0 || filtros.marca || filtros.fornecedor || filtros.giroMinimo > 0 || filtros.estoqueMax !== null || filtros.reposicaoMin !== null ? 'bg-[#2d3277] text-white border-[#2d3277]' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                            className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer ${filtros.status.length > 0 || filtros.marca || filtros.fornecedor || filtros.giroMinimo > 0 || filtros.estoqueMax !== null || filtros.reposicaoMin !== null ? 'bg-[#2d3277] text-white border-[#2d3277]' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
                         >
                             <FilterX className="w-4 h-4" />
                             Filtros
@@ -298,7 +298,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                     <div className="relative">
                         <button 
                             onClick={() => setIsParamsOpen(!isParamsOpen)}
-                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
                         >
                             <Settings className="w-4 h-4 text-gray-500" />
                             Parâmetros
@@ -405,7 +405,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
                                     <td className={`px-5 py-4 whitespace-nowrap text-center sticky right-0 border-b border-gray-50 border-l border-gray-100 z-10 transition-colors ${isSelected ? 'bg-blue-50' : 'bg-white group-hover/row:bg-[#f9f9fb]'}`}>
                                         <button 
                                             onClick={() => onEditItem(item.sku)}
-                                            className="p-2 text-gray-400 hover:text-[#2d3277] hover:bg-blue-50 rounded-lg transition-all"
+                                            className="p-2 text-gray-400 hover:text-[#2d3277] hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
                                             title="Editar item"
                                         >
                                             <Edit2 className="w-4 h-4" />
