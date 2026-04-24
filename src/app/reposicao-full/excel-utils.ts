@@ -9,7 +9,7 @@ function normalizeKey(str: string): string {
     return str
         .toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]/g, "");
+        .replace(/[^a-z0-9_]/g, "");
 }
 
 /**
@@ -108,7 +108,7 @@ export async function parseProdutosExcel(file: File): Promise<{ data: ProdutoRaw
                     'caixa': 'tamanhoCaixa',
                     'quantity_per_crate': 'tamanhoCaixa',
                     'quantity_per_box': 'tamanhoCaixa',
-                    'Qty_per_Unit_of_Measure': 'tamanhoCaixa',
+                    'qty_per_unit_of_measure': 'tamanhoCaixa',
                     'inativo': 'inativo',
                     'motivoinativo': 'motivoInativo',
                     'emtransf': 'emTransf'
@@ -239,12 +239,15 @@ export async function parseVendasExcel(file: File): Promise<{ data: Record<strin
                     'vendaemquantidade': 'vendaQtd',
                     'vendaqtd': 'vendaQtd',
                     'quantidade': 'vendaQtd',
+                    'quantity': 'vendaQtd',
                     'vendaemvalor': 'vendaValorLiquido',
                     'valorliquido': 'vendaValorLiquido',
                     'valor': 'vendaValorLiquido',
+                    'net_sales_amount': 'vendaValorLiquido',
                     'salesamount': 'vendaValorBruto',
                     'valorbruto': 'vendaValorBruto',
                     'sales_amount': 'vendaValorBruto',
+                    'sales_before_contract': 'vendaValorBruto',
                 };
 
                 const mappedKeys = new Set(headers.map(h => keyMap[h]).filter(Boolean));
