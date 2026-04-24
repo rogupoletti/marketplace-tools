@@ -114,15 +114,13 @@ export async function parseProdutosExcel(file: File): Promise<{ data: ProdutoRaw
                     'emtransf': 'emTransf'
                 };
 
-                const unrecognizedHeaders = headers.filter(h => !keyMap[h]);
-                console.log("[ExcelParse] Unrecognized headers (potential missing mappings):", unrecognizedHeaders);
-
-                const requiredKeys = ['sku', 'descricao', 'estoquefull'];
-                const missingKeys = requiredKeys.filter(k => !headers.includes(k));
+                const mappedKeys = new Set(headers.map(h => keyMap[h]).filter(Boolean));
+                const requiredInternalKeys = ['sku', 'descricao', 'estoqueFull'];
+                const missingKeys = requiredInternalKeys.filter(k => !mappedKeys.has(k as any));
 
                 // Debug logs for diagnosis
                 console.log("[ExcelParse] Headers found:", headers);
-                console.log("[ExcelParse] KeyMap matches:", headers.filter(h => keyMap[h]).map(h => `${h}->${keyMap[h]}`));
+                console.log("[ExcelParse] Mapped keys:", Array.from(mappedKeys));
 
                 if (missingKeys.length > 0) {
                     return resolve({ data: [], errors: [`Colunas obrigatórias ausentes: ${missingKeys.join(', ')}`] });
@@ -237,15 +235,23 @@ export async function parseVendasExcel(file: File): Promise<{ data: Record<strin
                 const keyMap: Record<string, keyof VendaRaw> = {
                     'sku': 'sku',
                     'data': 'data',
-                    'vendaemvalor': 'vendaValorLiquido',
-                    'salesamount': 'vendaValorBruto',
+                    'date': 'data',
                     'vendaemquantidade': 'vendaQtd',
                     'vendaqtd': 'vendaQtd',
+                    'quantidade': 'vendaQtd',
+                    'vendaemvalor': 'vendaValorLiquido',
+                    'valorliquido': 'vendaValorLiquido',
+                    'valor': 'vendaValorLiquido',
+                    'salesamount': 'vendaValorBruto',
+                    'valorbruto': 'vendaValorBruto',
+                    'sales_amount': 'vendaValorBruto',
                 };
 
-                const requiredKeys = ['sku', 'data', 'vendaemquantidade'];
-                const missingKeys = requiredKeys.filter(k => !headers.includes(k) && !headers.includes('vendaqtd'));
-                if (missingKeys.length > 0 && !(headers.includes('vendaqtd'))) {
+                const mappedKeys = new Set(headers.map(h => keyMap[h]).filter(Boolean));
+                const requiredInternalKeys = ['sku', 'data', 'vendaQtd'];
+                const missingKeys = requiredInternalKeys.filter(k => !mappedKeys.has(k as any));
+
+                if (missingKeys.length > 0) {
                     return resolve({
                         data: {},
                         errors: [`Colunas obrigatórias ausentes no arquivo de vendas. Procure por: sku, data, venda (em quantidade).`]
@@ -263,12 +269,6 @@ export async function parseVendasExcel(file: File): Promise<{ data: Record<strin
                         const header = headers[j];
                         if (keyMap[header]) {
                             obj[keyMap[header]] = row[j];
-                        } else if (header.includes('quantidade')) {
-                            obj['vendaQtd'] = row[j];
-                        } else if (header === 'valor' || header === 'vendaemvalor' || header === 'valorliquido') {
-                            obj['vendaValorLiquido'] = row[j];
-                        } else if (header === 'salesamount' || header === 'valorbruto' || header === 'sales_amount') {
-                            obj['vendaValorBruto'] = row[j];
                         }
                     }
 
