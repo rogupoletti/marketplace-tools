@@ -28,6 +28,8 @@ function StatusBadge({ status }: { status: StatusReposicao }) {
 }
 
 const COLUMN_LABELS: Record<string, string> = {
+    curvaABC: "Curva ABC",
+    curvaABCFornecedor: "ABC Ind.",
     mlbs: "MLB(s)",
     mlbCatalogo: "MLB Catálogo",
     estoqueFull: "Full / Empresa",
@@ -45,6 +47,7 @@ const COLUMN_LABELS: Record<string, string> = {
     tamanhoCaixa: "Tam. Caixa",
     numCaixas: "Nº Caixas",
     sugestaoReposicao: "Sugestão",
+    necessidade: "Necessidade",
     asp: "ASP (R$)",
     markup: "Mark up",
 };
@@ -143,7 +146,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
     };
 
     const resetColumns = () => {
-        setColunasVisiveis(['sku', 'mlbs', 'estoqueFull', 'emTransf', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'sugestaoReposicao']);
+        setColunasVisiveis(['sku', 'curvaABC', 'curvaABCFornecedor', 'mlbs', 'estoqueFull', 'emTransf', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao']);
     };
 
     const formatCurrency = (val: number) => {
@@ -473,6 +476,23 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
 
 function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: number) => string, parametros: any) {
     switch (colId) {
+        case 'curvaABC':
+        case 'curvaABCFornecedor': {
+            const colors: Record<string, string> = {
+                "A": "bg-green-600 text-white",
+                "B": "bg-yellow-400 text-gray-900",
+                "C": "bg-blue-100 text-blue-800",
+                "Z": "bg-gray-400 text-white"
+            };
+            const val = (colId === 'curvaABC' ? item.curvaABC : item.curvaABCFornecedor) || "Z";
+            return (
+                <div className="flex justify-center">
+                    <span className={`w-6 h-6 flex items-center justify-center rounded-md text-[11px] font-black shadow-sm ${colors[val]}`}>
+                        {val}
+                    </span>
+                </div>
+            );
+        }
         case 'mlbs':
             return (
                 <div className="flex flex-wrap justify-center gap-1 max-w-[120px]">
@@ -518,6 +538,8 @@ function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: 
             return <span className="text-xs font-medium text-gray-600">{item.tamanhoCaixa || 1}</span>;
         case 'numCaixas':
             return <span className={`text-xs font-black ${item.numCaixas > 0 ? 'text-[#2d3277]' : 'text-gray-400'}`}>{item.numCaixas > 0 ? item.numCaixas : '—'}</span>;
+        case 'necessidade':
+            return <span className={`text-xs font-bold ${item.necessidade > 0 ? 'text-gray-700' : 'text-gray-400'}`}>{item.necessidade > 0 ? Math.ceil(item.necessidade) : '—'}</span>;
         case 'sugestaoReposicao':
             return (
                 <div className="flex flex-col items-center">

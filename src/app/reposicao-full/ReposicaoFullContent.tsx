@@ -77,6 +77,8 @@ export function ReposicaoFullContent() {
         if (data.length === 0) return showAlert("Aviso", "Nenhum dado para exportar.", "warning");
 
         const exportData = data.map(p => ({
+            "Curva ABC": p.curvaABC || "Z",
+            "ABC Ind.": p.curvaABCFornecedor || "Z",
             "SKU": p.sku,
             "Descrição": p.descricao,
             "MLB(s)": p.mlbs.join(", "),
@@ -101,6 +103,7 @@ export function ReposicaoFullContent() {
             "MLB Catálogo": p.mlbCatalogo || "",
             "Dias Desejado (Total)": p.diasDesejadoItem + (parametros?.leadTime || 7),
             "Sugestão Reposição": p.sugestaoReposicao,
+            "Necessidade": p.necessidade,
             "ASP": p.asp.toFixed(2),
             "Mark up": p.markup.toFixed(2),
             "Status": p.status

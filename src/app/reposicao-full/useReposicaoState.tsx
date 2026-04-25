@@ -61,7 +61,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const [selectedSkus, setSelectedSkusState] = useState<string[]>([]);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
     const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>([
-        'sku', 'mlbs', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'sugestaoReposicao'
+        'sku', 'curvaABC', 'curvaABCFornecedor', 'mlbs', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao'
     ]);
 
     // Load from LocalStorage
@@ -163,12 +163,72 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
     // Derived Processed Data
     const produtosProcessados = useMemo(() => {
-        return produtosRaw.map(prod => {
+        // 1. Process individual products
+        const processed = produtosRaw.map(prod => {
             const sku = prod.sku;
             const vendas = vendasRaw[sku] || [];
             const overrides = overridesGlobais[sku] || { ativo: true };
             return processProduct(prod, vendas, parametros, overrides, maxSalesDate);
         });
+
+        if (processed.length === 0) return [];
+
+        // 2. Calculate Global ABC Curve
+        const withSales = processed
+            .filter(p => p.vendasValorBrutoPeriodo > 0)
+            .sort((a, b) => b.vendasValorBrutoPeriodo - a.vendasValorBrutoPeriodo);
+
+        const totalRevenueGlobal = withSales.reduce((acc, p) => acc + p.vendasValorBrutoPeriodo, 0);
+
+        let cumulativeRevenueGlobal = 0;
+        const abcMapGlobal: Record<string, "A" | "B" | "C" | "Z"> = {};
+
+        withSales.forEach(p => {
+            cumulativeRevenueGlobal += p.vendasValorBrutoPeriodo;
+            const pct = (cumulativeRevenueGlobal / totalRevenueGlobal) * 100;
+
+            if (pct <= 80) abcMapGlobal[p.sku] = "A";
+            else if (pct <= 95) abcMapGlobal[p.sku] = "B";
+            else abcMapGlobal[p.sku] = "C";
+        });
+
+        // 3. Calculate Supplier ABC Curve
+        const abcMapSupplier: Record<string, "A" | "B" | "C" | "Z"> = {};
+        
+        // Group by supplier
+        const bySupplier: Record<string, typeof processed> = {};
+        processed.forEach(p => {
+            const s = p.fornecedor || "SEM FORNECEDOR";
+            if (!bySupplier[s]) bySupplier[s] = [];
+            bySupplier[s].push(p);
+        });
+
+        // Calculate ABC per supplier group
+        Object.values(bySupplier).forEach(group => {
+            const groupWithSales = group
+                .filter(p => p.vendasValorBrutoPeriodo > 0)
+                .sort((a, b) => b.vendasValorBrutoPeriodo - a.vendasValorBrutoPeriodo);
+
+            const totalRevenueGroup = groupWithSales.reduce((acc, p) => acc + p.vendasValorBrutoPeriodo, 0);
+
+            let cumulativeRevenueGroup = 0;
+            groupWithSales.forEach(p => {
+                cumulativeRevenueGroup += p.vendasValorBrutoPeriodo;
+                const pct = (cumulativeRevenueGroup / totalRevenueGroup) * 100;
+
+                if (pct <= 80) abcMapSupplier[p.sku] = "A";
+                else if (pct <= 95) abcMapSupplier[p.sku] = "B";
+                else abcMapSupplier[p.sku] = "C";
+            });
+        });
+
+        // 4. Assign to all products
+        return processed.map(p => ({
+            ...p,
+            curvaABC: abcMapGlobal[p.sku] || "Z",
+            curvaABCFornecedor: abcMapSupplier[p.sku] || "Z"
+        }));
+
     }, [produtosRaw, vendasRaw, parametros, overridesGlobais, maxSalesDate]);
 
     const produtosFiltrados = useMemo(() => {

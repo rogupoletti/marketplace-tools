@@ -123,17 +123,20 @@ export function processProduct(
     let sugestaoReposicao = 0;
     let estoqueAlvo = 0;
     let reposicaoBruta = 0;
+    let necessidade = 0;
 
     // Prioritize override box size if available
     const caixa = Math.max(1, overrides.tamanhoCaixa ?? produto.tamanhoCaixa ?? 1);
     const emTransf = produto.emTransf ?? 0;
 
     if (giroDiarioQtd === 0) {
+        necessidade = 2 * caixa;
         sugestaoReposicao = 2 * caixa;
     } else {
         estoqueAlvo = giroDiarioQtd * (diasDesejadoItem + leadTime);
         reposicaoBruta = estoqueAlvo - (produto.estoqueFull + emTransf);
-        sugestaoReposicao = Math.ceil(Math.max(0, reposicaoBruta) / caixa) * caixa;
+        necessidade = Math.max(0, reposicaoBruta);
+        sugestaoReposicao = Math.ceil(necessidade / caixa) * caixa;
     }
 
     // Cap suggestion by available local stock (estoqueEmpresa)
@@ -190,6 +193,7 @@ export function processProduct(
         estoqueAlvo,
         reposicaoBruta,
         sugestaoReposicao,
+        necessidade,
         vendaPerdidaLiquida,
         vendaPerdidaBruta,
         asp,

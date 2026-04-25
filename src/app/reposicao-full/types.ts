@@ -76,11 +76,14 @@ export interface ProdutoProcessado extends ProdutoRaw {
 
     // New calculated fields
     numCaixas: number;
+    necessidade: number;
     emTransf: number;
 
     // Status and Overrides
     overrides: UserOverrides;
     status: StatusReposicao;
+    curvaABC?: "A" | "B" | "C" | "Z";
+    curvaABCFornecedor?: "A" | "B" | "C" | "Z";
 }
 
 export interface ParametrosGlobais {
