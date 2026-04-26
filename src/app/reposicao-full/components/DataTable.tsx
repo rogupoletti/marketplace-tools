@@ -153,6 +153,13 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
     };
 
+    const formatNumber = (val: number, decimals: number = 2) => {
+        return new Intl.NumberFormat('pt-BR', { 
+            maximumFractionDigits: decimals,
+            minimumFractionDigits: 0
+        }).format(val);
+    };
+
     // DnD Handlers
     const handleDragStart = (e: React.DragEvent, colId: string) => {
         setDraggedColumn(colId);
@@ -400,7 +407,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
 
                                         return (
                                             <td key={colId} className="px-5 py-4 whitespace-nowrap text-center border-b border-gray-50">
-                                                {renderCell(colId, item, formatCurrency, parametros)}
+                                                {renderCell(colId, item, formatCurrency, formatNumber, parametros)}
                                             </td>
                                         );
                                     })}
@@ -474,7 +481,13 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
     );
 }
 
-function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: number) => string, parametros: any) {
+function renderCell(
+    colId: string, 
+    item: ProdutoProcessado, 
+    formatCurrency: (v: number) => string, 
+    formatNumber: (v: number, dec?: number) => string,
+    parametros: any
+) {
     switch (colId) {
         case 'curvaABC':
         case 'curvaABCFornecedor': {
@@ -507,9 +520,9 @@ function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: 
         case 'estoqueFull':
             return (
                 <div className="flex items-center justify-center gap-1.5">
-                    <span className={`text-sm font-bold ${item.estoqueFull === 0 ? 'text-red-500' : 'text-green-600'}`}>{item.estoqueFull}</span>
+                    <span className={`text-sm font-bold ${item.estoqueFull === 0 ? 'text-red-500' : 'text-green-600'}`}>{formatNumber(item.estoqueFull, 0)}</span>
                     <span className="text-gray-300">/</span>
-                    <span className="text-sm font-medium text-gray-600">{item.estoqueEmpresa}</span>
+                    <span className="text-sm font-medium text-gray-600">{formatNumber(item.estoqueEmpresa, 0)}</span>
                 </div>
             );
         case 'status':
@@ -517,9 +530,9 @@ function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: 
         case 'diasInativos':
             return item.diasInativos > 0 ? <span className="text-red-500 text-xs font-bold">{item.diasInativos} dias</span> : <span className="text-gray-400 text-xs">—</span>;
         case 'giroDiarioQtd':
-            return <span className="text-xs font-bold text-gray-700">{item.giroDiarioQtd > 0 ? item.giroDiarioQtd.toFixed(1) : '—'}</span>;
+            return <span className="text-xs font-bold text-gray-700">{item.giroDiarioQtd > 0 ? formatNumber(item.giroDiarioQtd, 2) : '—'}</span>;
         case 'vendasQtdPeriodo':
-            return <span className="text-xs font-medium text-gray-600">{item.vendasQtdPeriodo}</span>;
+            return <span className="text-xs font-medium text-gray-600">{formatNumber(item.vendasQtdPeriodo, 0)}</span>;
         case 'vendasValorLiquidoPeriodo':
             return <span className="text-xs font-medium text-gray-600">{formatCurrency(item.vendasValorLiquidoPeriodo)}</span>;
         case 'vendasValorBrutoPeriodo':
@@ -529,21 +542,21 @@ function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: 
         case 'vendaPerdidaBruta':
             return item.vendaPerdidaBruta > 0 ? <span className="text-red-500 text-xs font-bold">{formatCurrency(item.vendaPerdidaBruta)}</span> : <span className="text-gray-400 text-xs">—</span>;
         case 'diasEstoqueFull':
-            return <span className="text-xs font-medium text-gray-600">{item.diasEstoqueFull > 0 ? Math.ceil(item.diasEstoqueFull) : '—'}</span>;
+            return <span className="text-xs font-medium text-gray-600">{item.diasEstoqueFull > 0 ? formatNumber(Math.ceil(item.diasEstoqueFull), 0) : '—'}</span>;
         case 'diasEstoqueTotal':
-            return <span className="text-xs font-medium text-gray-600">{item.diasEstoqueTotal > 0 ? Math.ceil(item.diasEstoqueTotal) : '—'}</span>;
+            return <span className="text-xs font-medium text-gray-600">{item.diasEstoqueTotal > 0 ? formatNumber(Math.ceil(item.diasEstoqueTotal), 0) : '—'}</span>;
         case 'emTransf':
-            return <span className={`text-xs font-bold ${item.emTransf > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{item.emTransf > 0 ? item.emTransf : '—'}</span>;
+            return <span className={`text-xs font-bold ${item.emTransf > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{item.emTransf > 0 ? formatNumber(item.emTransf, 0) : '—'}</span>;
         case 'tamanhoCaixa':
             return <span className="text-xs font-medium text-gray-600">{item.tamanhoCaixa || 1}</span>;
         case 'numCaixas':
-            return <span className={`text-xs font-black ${item.numCaixas > 0 ? 'text-[#2d3277]' : 'text-gray-400'}`}>{item.numCaixas > 0 ? item.numCaixas : '—'}</span>;
+            return <span className={`text-xs font-black ${item.numCaixas > 0 ? 'text-[#2d3277]' : 'text-gray-400'}`}>{item.numCaixas > 0 ? formatNumber(item.numCaixas, 2) : '—'}</span>;
         case 'necessidade':
-            return <span className={`text-xs font-bold ${item.necessidade > 0 ? 'text-gray-700' : 'text-gray-400'}`}>{item.necessidade > 0 ? Math.ceil(item.necessidade) : '—'}</span>;
+            return <span className={`text-xs font-bold ${item.necessidade > 0 ? 'text-gray-700' : 'text-gray-400'}`}>{item.necessidade > 0 ? formatNumber(Math.ceil(item.necessidade), 0) : '—'}</span>;
         case 'sugestaoReposicao':
             return (
                 <div className="flex flex-col items-center">
-                    <span className="text-lg font-black text-[#2d3277]">{item.sugestaoReposicao}</span>
+                    <span className="text-lg font-black text-[#2d3277]">{formatNumber(item.sugestaoReposicao, 0)}</span>
                     <span className="text-[10px] font-medium text-gray-400 -mt-1">
                         {item.giroDiarioQtd === 0 ? "Sem vendas" : `Prev: ${item.diasDesejadoItem + (parametros?.leadTime || 7)} dias`}
                     </span>
@@ -552,7 +565,7 @@ function renderCell(colId: string, item: ProdutoProcessado, formatCurrency: (v: 
         case 'asp':
             return <span className="text-xs font-bold text-gray-700">{item.asp > 0 ? formatCurrency(item.asp) : '—'}</span>;
         case 'markup':
-            return <span className="text-xs font-bold text-gray-700">{item.markup > 0 ? item.markup.toFixed(2) : '—'}</span>;
+            return <span className="text-xs font-bold text-gray-700">{item.markup > 0 ? formatNumber(item.markup, 2) : '—'}</span>;
         default:
             return null;
     }
