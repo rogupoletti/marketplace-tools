@@ -102,10 +102,22 @@ export function processProduct(
         }
     }
 
-    const diasInativos = Math.max(0, calculoGiroDias - diasComVendas.size);
-    const diasAtivos = Math.max(1, calculoGiroDias - diasInativos);
+    let diasInativos = Math.max(0, calculoGiroDias - diasComVendas.size);
+    let diasAtivos = Math.max(1, calculoGiroDias - diasInativos);
+    const initialGiro = vendasQtdPeriodo / diasAtivos;
+    const fullPeriodGiro = vendasQtdPeriodo / Math.max(1, calculoGiroDias);
 
-    const giroDiarioQtd = vendasQtdPeriodo / diasAtivos;
+    let giroDiarioQtd = initialGiro;
+
+    // Regra para evitar falsos positivos de ruptura em produtos de baixo giro:
+    // Se o giro nos dias ativos for baixo (< 5) E o giro total no mês for baixo (< 1),
+    // consideramos que não houve ruptura (dias inativos = 0).
+    if (initialGiro < 5 && fullPeriodGiro < 1) {
+        diasInativos = 0;
+        diasAtivos = Math.max(1, calculoGiroDias);
+        giroDiarioQtd = fullPeriodGiro;
+    }
+
     const giroDiarioValorLiquido = vendasValorLiquidoPeriodo / diasAtivos;
     const giroDiarioValorBruto = vendasValorBrutoPeriodo / diasAtivos;
 
