@@ -4,7 +4,7 @@ import { ReposicaoProvider } from "./useReposicaoState";
 import { ReposicaoFullContent } from "./ReposicaoFullContent";
 
 export const metadata: Metadata = {
-    title: "Reposição Full – Mercado Livre | Marketplace Tools",
+    title: "Reposição Full – Mercado Livre | Seller Dock",
     description: "Otimize seu estoque no Full com base no giro diário e lead time.",
 };
 

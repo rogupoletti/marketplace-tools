@@ -16,7 +16,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
     const isMeli = brand === "meli";
     const isAmazon = brand === "amazon";
 
-    const brandName = isShopee ? "Shopee Pro" : isMeli ? "Mercado Livre Pro" : isAmazon ? "Amazon Pro" : "Marketplace Tools";
+    const brandName = isShopee ? "Shopee Pro" : isMeli ? "Mercado Livre Pro" : isAmazon ? "Amazon Pro" : "Seller Dock";
     const brandColor = isShopee ? "text-primary" : isMeli ? "text-meli-secondary" : isAmazon ? "text-[#FF9900]" : "text-gray-900";
     const bgColor = isShopee ? "bg-primary" : isMeli ? "bg-meli-primary" : isAmazon ? "bg-[#232F3E]" : "bg-gray-900";
 
@@ -24,15 +24,25 @@ export default function Header({ brand = "default" }: HeaderProps) {
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                 <Link href="/" className="flex items-center gap-3 group transition-opacity hover:opacity-90">
-                    <div className={`w-10 h-10 ${bgColor} rounded-lg flex items-center justify-center`}>
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path>
-                        </svg>
-                    </div>
-                    <div>
-                        <h1 className={`text-lg font-bold ${brandColor} leading-tight`}>{brandName}</h1>
-                        <p className="text-xs text-gray-500">Calculadora de Precificação</p>
-                    </div>
+                    {brand === "default" ? (
+                        <img
+                            src="/images/logo-full.png"
+                            alt="Seller Dock"
+                            className="h-11 w-auto object-contain"
+                        />
+                    ) : (
+                        <>
+                            <div className={`w-10 h-10 ${bgColor} rounded-lg flex items-center justify-center`}>
+                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className={`text-lg font-bold ${brandColor} leading-tight`}>{brandName}</h1>
+                                <p className="text-xs text-gray-500">Calculadora de Precificação</p>
+                            </div>
+                        </>
+                    )}
                 </Link>
 
                 {/* Mobile menu button */}
