@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
 import { ProdutoRaw, VendaRaw, ParametrosGlobais, UserOverrides, Filtros, ProdutoProcessado } from "./types";
 import { processProduct, getMaxDate } from "./core-logic";
+import { useAuth } from "@/lib/auth-context";
 
 interface ReposicaoContextData {
     produtosRaw: ProdutoRaw[];
@@ -19,6 +20,7 @@ interface ReposicaoContextData {
     // Actions
     setProdutosRaw: (p: ProdutoRaw[]) => void;
     setVendasRaw: (v: Record<string, VendaRaw[]>) => void;
+    fetchVendasAnymarket: () => Promise<void>;
     setParametros: (p: Partial<ParametrosGlobais>) => void;
     setFiltros: (f: Partial<Filtros>) => void;
     updateOverride: (sku: string, o: Partial<UserOverrides>) => void;
@@ -52,6 +54,7 @@ const DEFAULT_FILTROS: Filtros = {
 };
 
 export function ReposicaoProvider({ children }: { children: ReactNode }) {
+    const { user } = useAuth();
     const [isLoaded, setIsLoaded] = useState(false);
     const [produtosRaw, setProdutosRawState] = useState<ProdutoRaw[]>([]);
     const [vendasRaw, setVendasRawState] = useState<Record<string, VendaRaw[]>>({});
@@ -83,6 +86,15 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         setIsLoaded(true);
     }, []);
 
+    // Auto-fetch sales from DB when user is logged in
+    useEffect(() => {
+        if (user && isLoaded) {
+            fetchVendasAnymarket().catch(() => {
+                // Silently fail or handle error - already logged in fetchVendasAnymarket
+            });
+        }
+    }, [user, isLoaded]);
+
     // Save to LocalStorage
     const saveAction = (
         pRaw: ProdutoRaw[],
@@ -110,6 +122,43 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const setVendasRaw = (v: Record<string, VendaRaw[]>) => {
         setVendasRawState(v);
         saveAction(produtosRaw, v, parametros, overridesGlobais);
+    };
+
+    const fetchVendasAnymarket = async () => {
+        if (!user) return;
+        try {
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/reposicao-full/sales", {
+                headers: { "Authorization": `Bearer ${idToken}` }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao buscar vendas");
+
+            const novasVendas: Record<string, VendaRaw[]> = {};
+            
+            data.sales.forEach((sale: any) => {
+                const isMeli = sale.marketplace?.toUpperCase().includes("MERCADO") && sale.marketplace?.toUpperCase().includes("LIVRE");
+                if (!isMeli) return; // Filtro de MELI apenas
+
+                const sku = sale.sku;
+                if (!novasVendas[sku]) {
+                    novasVendas[sku] = [];
+                }
+                
+                novasVendas[sku].push({
+                    sku: sale.sku,
+                    data: sale.date,
+                    vendaQtd: sale.vendaQtd,
+                    vendaValorLiquido: sale.vendaValorLiquido,
+                    vendaValorBruto: sale.vendaValorBruto,
+                });
+            });
+
+            setVendasRaw(novasVendas);
+        } catch (e) {
+            console.error("Erro ao importar da Anymarket:", e);
+            throw e; // Lança para o componente lidar com UI
+        }
     };
 
     const setParametros = (p: Partial<ParametrosGlobais>) => {
@@ -283,6 +332,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
                 setProdutosRaw,
                 setVendasRaw,
+                fetchVendasAnymarket,
                 setParametros,
                 setFiltros: (f) => setFiltrosState({ ...filtros, ...f }),
                 updateOverride,
