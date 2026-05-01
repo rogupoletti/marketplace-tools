@@ -40,7 +40,7 @@ export async function syncOrders(accountId: string, daysBefore: number = 90) {
         const createdAfter = dateFrom.toISOString().split('.')[0] + 'Z'; 
         
         let offset = startOffset;
-        const limit = 50;
+        const limit = 100;
         let hasMore = true;
         let totalProcessed = startOffset;
 
@@ -74,7 +74,7 @@ export async function syncOrders(accountId: string, daysBefore: number = 90) {
 
                 console.log(`[Anymarket Sync] Processados ${totalProcessed} pedidos de um total de ${page.page.totalElements} (${progress}%)...`);
                 
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
 
             if (page.page.number + 1 >= page.page.totalPages || orders.length === 0) {

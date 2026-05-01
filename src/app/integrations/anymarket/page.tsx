@@ -14,6 +14,7 @@ interface IntegrationStatus {
     lastSyncStatus?: 'none' | 'running' | 'success' | 'error';
     lastSyncError?: string | null;
     syncProgress?: number;
+    syncOffset?: number;
     totalOrders?: number;
 }
 
@@ -62,10 +63,13 @@ export default function AnymarketIntegrationPage() {
                             const remainingMs = remaining * msPerOrder;
                             
                             // Formata o tempo restante
-                            const minutes = Math.floor(remainingMs / 60000);
+                            const hours = Math.floor(remainingMs / 3600000);
+                            const minutes = Math.floor((remainingMs % 3600000) / 60000);
                             const seconds = Math.floor((remainingMs % 60000) / 1000);
                             
-                            if (minutes > 0) {
+                            if (hours > 0) {
+                                setEstimatedTimeRemaining(`~${hours}h ${minutes}m`);
+                            } else if (minutes > 0) {
                                 setEstimatedTimeRemaining(`~${minutes}m ${seconds}s`);
                             } else {
                                 setEstimatedTimeRemaining(`~${seconds}s`);
@@ -82,7 +86,7 @@ export default function AnymarketIntegrationPage() {
         } finally {
             setIsLoadingStatus(false);
         }
-    }, [user]);
+    }, [user, syncStartTime, startProgress]);
 
     useEffect(() => {
         if (!loading) {
@@ -342,7 +346,7 @@ export default function AnymarketIntegrationPage() {
                         </h3>
                         <div className="flex-1">
                             <p className="text-xs text-gray-500">
-                                Sincroniza os pedidos dos últimos 3 dias.
+                                Sincroniza os pedidos dos últimos 90 dias.
                             </p>
                             {status?.lastSyncStatus === 'running' && (
                                 <div className="mt-2">
@@ -366,8 +370,12 @@ export default function AnymarketIntegrationPage() {
                                     </div>
                                     <div className="flex justify-between text-[9px] text-gray-400 mt-1">
                                         <span>Total estimado: {status.totalOrders?.toLocaleString('pt-BR')} pedidos</span>
-                                        {estimatedTimeRemaining && (
+                                        {status.syncOffset === 0 ? (
+                                            <span className="font-medium text-[#2d3277] animate-pulse">Iniciando...</span>
+                                        ) : estimatedTimeRemaining ? (
                                             <span className="font-medium text-[#2d3277]">Restam: {estimatedTimeRemaining}</span>
+                                        ) : (
+                                            <span className="font-medium text-[#2d3277]">Calculando tempo...</span>
                                         )}
                                     </div>
                                 </div>
@@ -388,7 +396,7 @@ export default function AnymarketIntegrationPage() {
                                     disabled={isSyncing || !status?.enabled || status?.lastSyncStatus === 'running'}
                                     className="w-full py-2 bg-[#2d3277] text-white font-medium rounded-lg hover:bg-[#2d3277]/90 disabled:opacity-50 transition-colors text-sm shadow-sm"
                                 >
-                                    {isSyncing || status?.lastSyncStatus === 'running' ? "Sincronizando..." : "Carga Inicial (3 dias)"}
+                                    {isSyncing || status?.lastSyncStatus === 'running' ? "Sincronizando..." : "Carga Inicial (90 dias)"}
                                 </button>
                     </div>
                 </div>

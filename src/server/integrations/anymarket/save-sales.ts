@@ -28,19 +28,23 @@ export async function saveSales(accountId: string, rawOrders: AnymarketOrder[], 
     const FieldValue = require('firebase-admin').firestore.FieldValue;
 
     // 1. Buscar status dos pedidos existentes
+    // 1. Buscar status dos pedidos existentes (em paralelo para performance)
     const orderIds = rawOrders.map(o => o.id.toString());
     const existingOrdersMap = new Map<string, AnymarketOrder>();
+    const chunks: string[][] = [];
     
-    // Dividimos em chunks de 30 (limite do 'in' no Firestore)
     for (let i = 0; i < orderIds.length; i += 30) {
-        const chunk = orderIds.slice(i, i + 30);
+        chunks.push(orderIds.slice(i, i + 30));
+    }
+
+    await Promise.all(chunks.map(async (chunk) => {
         const existingSnapshot = await accountRef.collection('anymarketOrders')
             .where('__name__', 'in', chunk)
             .get();
         existingSnapshot.forEach(doc => {
             existingOrdersMap.set(doc.id, doc.data() as AnymarketOrder);
         });
-    }
+    }));
 
     console.log(`[Save Sales] Processando ${rawOrders.length} pedidos...`);
 
