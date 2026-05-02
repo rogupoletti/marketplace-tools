@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import MainLayoutWrapper from "@/components/MainLayoutWrapper";
 import { AuthProvider } from "@/lib/auth-context";
 import { UIProvider } from "@/lib/ui-context";
 
@@ -36,11 +35,9 @@ export default function RootLayout({
       >
         <AuthProvider>
           <UIProvider>
-            <Header />
-            <main className="flex-grow">
+            <MainLayoutWrapper>
               {children}
-            </main>
-            <Footer />
+            </MainLayoutWrapper>
           </UIProvider>
         </AuthProvider>
       </body>
