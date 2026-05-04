@@ -4,7 +4,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useUI } from "@/lib/ui-context";
-import { Key, RefreshCw, CheckCircle2, Trash2, ShieldCheck, AlertCircle } from "lucide-react";
+import { Key, RefreshCw, CheckCircle2, Trash2, ShieldCheck, AlertCircle, Building2 } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
 
 interface IntegrationStatus {
     enabled: boolean;
@@ -36,12 +38,20 @@ export default function AnymarketIntegrationPage() {
     const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
     const [startProgress, setStartProgress] = useState<number>(0);
     const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<string | null>(null);
+    
+    // Para Superadmin: Lista de contas e conta selecionada
+    const [accounts, setAccounts] = useState<{ id: string, name: string }[]>([]);
+    const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 
     const fetchStatus = useCallback(async () => {
         if (!user) return;
         try {
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/integrations/anymarket/status", {
+            const url = selectedAccountId 
+                ? `/api/integrations/anymarket/status?accountId=${selectedAccountId}`
+                : "/api/integrations/anymarket/status";
+                
+            const res = await fetch(url, {
                 headers: { "Authorization": `Bearer ${idToken}` }
             });
             if (res.ok) {
@@ -86,7 +96,7 @@ export default function AnymarketIntegrationPage() {
         } finally {
             setIsLoadingStatus(false);
         }
-    }, [user, syncStartTime, startProgress]);
+    }, [user, syncStartTime, startProgress, selectedAccountId]);
 
     useEffect(() => {
         if (!loading) {
@@ -99,6 +109,31 @@ export default function AnymarketIntegrationPage() {
             }
         }
     }, [user, loading, router, userData, fetchStatus]);
+
+    // Carregar contas para superadmin
+    useEffect(() => {
+        if (userData?.role === 'superadmin' && user) {
+            const fetchAccounts = async () => {
+                try {
+                    const q = query(collection(db, "accounts"), orderBy("name"));
+                    const snapshot = await getDocs(q);
+                    const accountsList = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        name: doc.data().name || "Sem Nome"
+                    }));
+                    setAccounts(accountsList);
+                    
+                    // Se tiver contas e nenhuma selecionada, seleciona a primeira
+                    if (accountsList.length > 0 && !selectedAccountId) {
+                        setSelectedAccountId(accountsList[0].id);
+                    }
+                } catch (err) {
+                    console.error("Erro ao buscar contas:", err);
+                }
+            };
+            fetchAccounts();
+        }
+    }, [userData, user]);
 
     // Polling effect
     useEffect(() => {
@@ -175,8 +210,10 @@ export default function AnymarketIntegrationPage() {
                 const res = await fetch("/api/integrations/anymarket/initial-sync", {
                     method: "POST",
                     headers: {
+                        "Content-Type": "application/json",
                         "Authorization": `Bearer ${idToken}`
-                    }
+                    },
+                    body: JSON.stringify({ accountId: selectedAccountId })
                 });
 
                 const data = await res.json();
@@ -340,65 +377,87 @@ export default function AnymarketIntegrationPage() {
                         </button>
                     </div>
 
-                    <div className="p-4 border border-gray-200 rounded-lg flex flex-col gap-3">
-                        <h3 className="font-medium text-gray-800 flex items-center gap-2">
-                            <RefreshCw className={`w-4 h-4 text-[#2d3277] ${status?.lastSyncStatus === 'running' ? 'animate-spin' : ''}`} /> Carga Inicial
-                        </h3>
-                        <div className="flex-1">
-                            <p className="text-xs text-gray-500">
-                                Sincroniza os pedidos dos últimos 90 dias.
-                            </p>
-                            {status?.lastSyncStatus === 'running' && (
-                                <div className="mt-2">
-                                    <div className="flex justify-between text-[10px] text-gray-500 mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <span>Processando pedidos...</span>
-                                            <button 
-                                                onClick={handleResetSync}
-                                                className="text-red-500 hover:underline font-semibold"
+                    {userData?.role === 'superadmin' && (
+                        <div className="p-4 border border-gray-200 rounded-lg flex flex-col gap-3">
+                            <h3 className="font-medium text-gray-800 flex items-center gap-2">
+                                <RefreshCw className={`w-4 h-4 text-[#2d3277] ${status?.lastSyncStatus === 'running' ? 'animate-spin' : ''}`} /> Carga Inicial
+                            </h3>
+                            <div className="flex-1">
+                                <p className="text-xs text-gray-500 mb-3">
+                                    Sincroniza os pedidos dos últimos 90 dias para a conta selecionada.
+                                </p>
+                                
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Escolher Conta</label>
+                                        <div className="relative">
+                                            <Building2 className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                            <select 
+                                                value={selectedAccountId}
+                                                onChange={(e) => setSelectedAccountId(e.target.value)}
+                                                className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#2d3277] focus:border-[#2d3277] outline-none appearance-none"
                                             >
-                                                (Interromper)
-                                            </button>
+                                                <option value="" disabled>Selecione uma conta...</option>
+                                                {accounts.map(acc => (
+                                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                                ))}
+                                            </select>
                                         </div>
-                                        <span>{status.syncProgress}%</span>
                                     </div>
-                                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                                        <div 
-                                            className="bg-[#2d3277] h-full transition-all duration-500" 
-                                            style={{ width: `${status.syncProgress}%` }}
-                                        ></div>
-                                    </div>
-                                    <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-                                        <span>Total estimado: {status.totalOrders?.toLocaleString('pt-BR')} pedidos</span>
-                                        {status.syncOffset === 0 ? (
-                                            <span className="font-medium text-[#2d3277] animate-pulse">Iniciando...</span>
-                                        ) : estimatedTimeRemaining ? (
-                                            <span className="font-medium text-[#2d3277]">Restam: {estimatedTimeRemaining}</span>
-                                        ) : (
-                                            <span className="font-medium text-[#2d3277]">Calculando tempo...</span>
-                                        )}
-                                    </div>
+
+                                    {status?.lastSyncStatus === 'running' && (
+                                        <div className="mt-2">
+                                            <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span>Processando pedidos...</span>
+                                                    <button 
+                                                        onClick={handleResetSync}
+                                                        className="text-red-500 hover:underline font-semibold"
+                                                    >
+                                                        (Interromper)
+                                                    </button>
+                                                </div>
+                                                <span>{status.syncProgress}%</span>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                                <div 
+                                                    className="bg-[#2d3277] h-full transition-all duration-500" 
+                                                    style={{ width: `${status.syncProgress}%` }}
+                                                ></div>
+                                            </div>
+                                            <div className="flex justify-between text-[9px] text-gray-400 mt-1">
+                                                <span>Total estimado: {status.totalOrders?.toLocaleString('pt-BR')} pedidos</span>
+                                                {status.syncOffset === 0 ? (
+                                                    <span className="font-medium text-[#2d3277] animate-pulse">Iniciando...</span>
+                                                ) : estimatedTimeRemaining ? (
+                                                    <span className="font-medium text-[#2d3277]">Restam: {estimatedTimeRemaining}</span>
+                                                ) : (
+                                                    <span className="font-medium text-[#2d3277]">Calculando tempo...</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {status?.lastSuccessfulSyncAt && status?.lastSyncStatus !== 'running' && (
+                                        <p className="text-[10px] text-green-600 mt-1">
+                                            Último sucesso: {new Date(status.lastSuccessfulSyncAt).toLocaleString('pt-BR')}
+                                        </p>
+                                    )}
+                                    {status?.lastSyncStatus === 'error' && (
+                                        <p className="text-[10px] text-red-600 mt-1 flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3" /> Erro: {status.lastSyncError}
+                                        </p>
+                                    )}
                                 </div>
-                            )}
-                            {status?.lastSuccessfulSyncAt && status?.lastSyncStatus !== 'running' && (
-                                <p className="text-[10px] text-green-600 mt-1">
-                                    Último sucesso: {new Date(status.lastSuccessfulSyncAt).toLocaleString('pt-BR')}
-                                </p>
-                            )}
-                            {status?.lastSyncStatus === 'error' && (
-                                <p className="text-[10px] text-red-600 mt-1 flex items-center gap-1">
-                                    <AlertCircle className="w-3 h-3" /> Erro: {status.lastSyncError}
-                                </p>
-                            )}
+                            </div>
+                            <button 
+                                onClick={handleInitialSync}
+                                disabled={isSyncing || !selectedAccountId || status?.lastSyncStatus === 'running'}
+                                className="w-full py-2 bg-[#2d3277] text-white font-medium rounded-lg hover:bg-[#2d3277]/90 disabled:opacity-50 transition-colors text-sm shadow-sm"
+                            >
+                                {isSyncing || status?.lastSyncStatus === 'running' ? "Sincronizando..." : "Carga Inicial (90 dias)"}
+                            </button>
                         </div>
-                                <button 
-                                    onClick={handleInitialSync}
-                                    disabled={isSyncing || !status?.enabled || status?.lastSyncStatus === 'running'}
-                                    className="w-full py-2 bg-[#2d3277] text-white font-medium rounded-lg hover:bg-[#2d3277]/90 disabled:opacity-50 transition-colors text-sm shadow-sm"
-                                >
-                                    {isSyncing || status?.lastSyncStatus === 'running' ? "Sincronizando..." : "Carga Inicial (90 dias)"}
-                                </button>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -19,11 +19,19 @@ export async function POST(request: NextRequest) {
         }
 
         const userData = userDoc.data();
-        const accountId = userData?.accountId;
-        const isAdmin = userData?.isAdmin === true || userData?.role === 'superadmin' || userData?.role === 'account_admin';
+        const body = await request.json().catch(() => ({}));
+        const requestedAccountId = body.accountId;
+
+        let accountId = userData?.accountId;
+        const isSuperAdmin = userData?.role === 'superadmin';
+        const isAdmin = userData?.isAdmin === true || isSuperAdmin || userData?.role === 'account_admin';
+
+        if (isSuperAdmin && requestedAccountId) {
+            accountId = requestedAccountId;
+        }
 
         if (!isAdmin || !accountId) {
-            return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+            return NextResponse.json({ error: "Acesso negado ou conta não selecionada." }, { status: 403 });
         }
 
         // Executar a sincronização em background. 

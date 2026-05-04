@@ -17,7 +17,17 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: "Usuário não encontrado" }, { status: 403 });
         }
 
-        const accountId = userDoc.data()?.accountId;
+        const userData = userDoc.data();
+        const searchParams = request.nextUrl.searchParams;
+        const requestedAccountId = searchParams.get("accountId");
+        
+        let accountId = userData?.accountId;
+        
+        // Se for superadmin e passar um accountId, permite usar esse accountId
+        if (userData?.role === 'superadmin' && requestedAccountId) {
+            accountId = requestedAccountId;
+        }
+
         if (!accountId) {
             return NextResponse.json({ error: "Account ID não encontrado" }, { status: 403 });
         }

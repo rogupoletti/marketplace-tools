@@ -40,3 +40,17 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* Global button and interactive element styles */
+button, 
+[role="button"],
+select {
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+button:disabled,
+[role="button"]:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
