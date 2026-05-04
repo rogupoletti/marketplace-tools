@@ -103,8 +103,8 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                         </h3>
                         
                         <div className={`space-y-1 ${actualCollapsed ? 'px-2' : 'px-3'}`}>
-                            {section.items.map((item) => {
-                                const isActive = pathname === item.href || (item.subItems?.some(s => pathname === s.href));
+                            {section.items.map((item: any) => {
+                                const isActive = pathname === item.href || (item.subItems?.some((s: any) => pathname === s.href));
                                 
                                 if (item.isDropdown) {
                                     return (
@@ -128,7 +128,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                                             
                                             {/* Submenu */}
                                             <div className={`overflow-hidden transition-all duration-300 ${(!actualCollapsed && item.isOpen) ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
-                                                {item.subItems?.map((sub) => (
+                                                {item.subItems?.map((sub: any) => (
                                                     <Link 
                                                         key={sub.name}
                                                         href={sub.href}
