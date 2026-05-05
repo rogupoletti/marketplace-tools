@@ -6,6 +6,7 @@ import { useUI } from "@/lib/ui-context";
 import { useRouter } from "next/navigation";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { sendPasswordResetEmailAction } from "@/app/actions/email";
 import {
     collection,
     getDocs,
@@ -46,7 +47,7 @@ export default function AdminDashboard() {
     });
     const [editingPageId, setEditingPageId] = useState<string | null>(null);
 
-    const [newUser, setNewUser] = useState({ email: "", password: "", role: "account_user", accountId: "", subAccountIds: [] as string[] });
+    const [newUser, setNewUser] = useState({ email: "", role: "account_user", accountId: "", subAccountIds: [] as string[] });
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
     const [newAccount, setNewAccount] = useState({ name: "" });
@@ -229,7 +230,10 @@ export default function AdminDashboard() {
             const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
             const secondaryAuth = getAuth(secondaryApp);
 
-            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
+            // Gerar senha aleatória temporária
+            const tempPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).toUpperCase().slice(-4);
+
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, tempPassword);
             const newUid = userCredential.user.uid;
 
             await setDoc(doc(db, "users", newUid), {
@@ -241,9 +245,17 @@ export default function AdminDashboard() {
                 createdAt: new Date().toISOString()
             });
 
+            // Enviar e-mail de Boas-vindas (que gera um link de definição de senha) via Resend
+            try {
+                await sendPasswordResetEmailAction(newUser.email, window.location.origin, 'welcome');
+            } catch (resetErr) {
+                console.error("Erro ao enviar e-mail de reset inicial:", resetErr);
+                // Não trava o processo, mas avisa
+            }
+
             await deleteApp(secondaryApp);
 
-            showNotification("success", "Usuário criado com sucesso!");
+            showNotification("success", "Usuário criado com sucesso! Um e-mail de configuração de senha foi enviado.");
             setShowUserModal(false);
             fetchUsers();
         } catch (error: any) {
@@ -255,6 +267,20 @@ export default function AdminDashboard() {
             }
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleSendResetEmail = async (email: string) => {
+        try {
+            const result = await sendPasswordResetEmailAction(email, window.location.origin);
+            if (result.success) {
+                showNotification("success", `E-mail de redefinição enviado para ${email}`);
+            } else {
+                showNotification("error", "Erro ao enviar e-mail: " + result.error);
+            }
+        } catch (error: any) {
+            console.error("Error sending reset email:", error);
+            showNotification("error", "Erro ao enviar e-mail: " + error.message);
         }
     };
 
@@ -347,7 +373,7 @@ export default function AdminDashboard() {
                         <button onClick={() => { setNewAccount({name: ""}); setEditingAccountId(null); setShowAccountModal(true); }} className="bg-gray-800 text-white py-2 px-4 rounded-xl text-sm cursor-pointer hover:bg-gray-700">+ Empresa</button>
                     )}
                     <button onClick={() => { setNewSubaccount({name: "", accountId: isSuper ? "" : (userData?.accountId || "")}); setEditingSubaccountId(null); setShowSubaccountModal(true); }} className="bg-blue-600 text-white py-2 px-4 rounded-xl text-sm cursor-pointer hover:bg-blue-700">+ Subconta</button>
-                    <button onClick={() => { setNewUser({email: "", password: "", role: "account_user", accountId: isSuper ? "" : (userData?.accountId || ""), subAccountIds: []}); setEditingUserId(null); setShowUserModal(true); }} className="bg-green-600 text-white py-2 px-4 rounded-xl text-sm cursor-pointer hover:bg-green-700">+ Usuário</button>
+                    <button onClick={() => { setNewUser({email: "", role: "account_user", accountId: isSuper ? "" : (userData?.accountId || ""), subAccountIds: []}); setEditingUserId(null); setShowUserModal(true); }} className="bg-green-600 text-white py-2 px-4 rounded-xl text-sm cursor-pointer hover:bg-green-700">+ Usuário</button>
                 </div>
             </div>
 
@@ -431,7 +457,8 @@ export default function AdminDashboard() {
                                     <td className="p-4 text-sm text-gray-600">{accounts.find(a => a.id === u.accountId)?.name || (u.accountId ? "Conta Deletada" : "-")}</td>
                                     <td className="p-4">
                                         <div className="flex gap-4">
-                                            <button onClick={() => { setNewUser({email: u.email, password: "", role: u.role, accountId: u.accountId, subAccountIds: u.subAccountIds||[]}); setEditingUserId(u.id); setShowUserModal(true); }} className="text-blue-600 text-sm font-medium hover:underline cursor-pointer">Editar</button>
+                                            <button onClick={() => { setNewUser({email: u.email, role: u.role, accountId: u.accountId, subAccountIds: u.subAccountIds||[]}); setEditingUserId(u.id); setShowUserModal(true); }} className="text-blue-600 text-sm font-medium hover:underline cursor-pointer">Editar</button>
+                                            <button onClick={() => handleSendResetEmail(u.email)} className="text-orange-600 text-sm font-medium hover:underline cursor-pointer">Enviar Reset</button>
                                             {u.id !== user?.uid && (
                                                 <button onClick={() => deleteItem("users", u.id, fetchUsers)} className="text-red-600 text-sm font-medium hover:underline cursor-pointer">Excluir</button>
                                             )}
@@ -478,7 +505,11 @@ export default function AdminDashboard() {
                     <div className="bg-white p-8 rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl">
                         <h2 className="text-xl font-bold mb-6">{editingUserId ? "Editar Usuário" : "Novo Usuário"}</h2>
                         <input disabled={!!editingUserId} value={newUser.email} onChange={e=>setNewUser({...newUser, email: e.target.value})} placeholder="Email" className="w-full border p-3 rounded-xl mb-4 disabled:opacity-50 outline-none" />
-                        {!editingUserId && <input type="password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} placeholder="Senha inicial" className="w-full border p-3 rounded-xl mb-4 outline-none" />}
+                        {!editingUserId && (
+                            <div className="bg-blue-50 text-blue-700 p-4 rounded-xl text-xs mb-4">
+                                Um e-mail será enviado para o usuário configurar sua primeira senha após a criação.
+                            </div>
+                        )}
                         
                         <label className="block mt-2 font-bold mb-2 text-sm text-gray-700">Nível de Acesso</label>
                         <select value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})} className="w-full border p-3 rounded-xl mb-4 bg-white outline-none">
