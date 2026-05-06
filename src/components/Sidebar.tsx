@@ -29,6 +29,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
     const pathname = usePathname();
     const { userData } = useAuth();
     const [isCalculadorasOpen, setIsCalculadorasOpen] = useState(false);
+    const [isIntegracoesOpen, setIsIntegracoesOpen] = useState(false);
 
     const actualCollapsed = isCollapsed && !isHovered;
 
@@ -38,6 +39,9 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
     useEffect(() => {
         if (pathname.includes('/shopee') || pathname.includes('/meli') || pathname.includes('/amazon')) {
             setIsCalculadorasOpen(true);
+        }
+        if (pathname.includes('/integrations')) {
+            setIsIntegracoesOpen(true);
         }
     }, [pathname]);
 
@@ -70,7 +74,17 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
             section: "CONFIGURAÇÕES",
             items: [
                 ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: ShieldCheck }] : []),
-                { name: "Integrações", href: "/integrations/anymarket", icon: Zap },
+                { 
+                    name: "Integrações", 
+                    icon: Zap,
+                    isDropdown: true,
+                    isOpen: isIntegracoesOpen,
+                    toggle: () => setIsIntegracoesOpen(!isIntegracoesOpen),
+                    subItems: [
+                        { name: "Anymarket", href: "/integrations/anymarket" },
+                        { name: "Mercado Livre", href: "/integrations/mercadolivre" },
+                    ]
+                },
             ]
         }
     ];
