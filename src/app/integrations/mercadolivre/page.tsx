@@ -27,7 +27,6 @@ export default function MercadoLivreIntegrationPage() {
     const [isLoadingStatus, setIsLoadingStatus] = useState(true);
     const [isConnecting, setIsConnecting] = useState(false);
     
-    // Para Superadmin: Lista de contas e conta selecionada
     const [accounts, setAccounts] = useState<{ id: string, name: string }[]>([]);
     const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 
@@ -45,9 +44,12 @@ export default function MercadoLivreIntegrationPage() {
             if (res.ok) {
                 const data = await res.json();
                 setStatus(data);
+            } else {
+                setStatus(null);
             }
         } catch (error) {
             console.error("Erro ao buscar status:", error);
+            setStatus(null);
         } finally {
             setIsLoadingStatus(false);
         }
@@ -65,20 +67,19 @@ export default function MercadoLivreIntegrationPage() {
         }
     }, [user, loading, router, userData, fetchStatus]);
 
-    // Lidar com o retorno do OAuth na URL (ex: ?ml_status=success)
     useEffect(() => {
         const mlStatus = searchParams.get("ml_status");
         if (mlStatus === "success") {
             showAlert("Sucesso", "Conta do Mercado Livre conectada com sucesso!", "success");
-            // Limpa a URL
-            router.replace("/integrations/mercadolivre");
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
         } else if (mlStatus === "error" || mlStatus === "invalid_params") {
             showAlert("Erro", "Falha ao conectar conta do Mercado Livre.", "error");
-            router.replace("/integrations/mercadolivre");
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
         }
-    }, [searchParams, router, showAlert]);
+    }, [searchParams, showAlert]);
 
-    // Carregar contas para superadmin
     useEffect(() => {
         if (userData?.role === 'superadmin' && user) {
             const fetchAccounts = async () => {
@@ -102,7 +103,33 @@ export default function MercadoLivreIntegrationPage() {
         }
     }, [userData, user]);
 
+    const handleDisconnect = async () => {
+        const accountId = selectedAccountId || userData?.accountId;
+        if (!accountId) return;
+
+        showConfirm(
+            "Desconectar Conta", 
+            "Tem certeza que deseja desconectar sua conta do Mercado Livre? A sincronização de estoque será interrompida.",
+            async () => {
+                try {
+                    const { doc, deleteDoc } = await import("firebase/firestore");
+                    const integrationRef = doc(db, "accounts", accountId, "integrations", "mercadolivre");
+                    await deleteDoc(integrationRef);
+                    
+                    setStatus(null);
+                    showAlert("Sucesso", "Conta desconectada com sucesso.", "success");
+                    fetchStatus();
+                } catch (error: any) {
+                    showAlert("Erro", "Falha ao desconectar: " + error.message, "error");
+                }
+            },
+            "Sim, Desconectar",
+            "Cancelar"
+        );
+    };
+
     const handleConnect = async () => {
+        const accountId = selectedAccountId || userData?.accountId;
         if (userData?.role === 'superadmin' && !selectedAccountId) {
             return showAlert("Aviso", "Selecione uma conta para conectar.", "warning");
         }
@@ -110,21 +137,19 @@ export default function MercadoLivreIntegrationPage() {
         setIsConnecting(true);
         try {
             const idToken = await user!.getIdToken();
-            const url = selectedAccountId 
-                ? `/api/integrations/mercadolivre/auth?accountId=${selectedAccountId}`
+            const url = accountId 
+                ? `/api/integrations/mercadolivre/auth?accountId=${accountId}`
                 : `/api/integrations/mercadolivre/auth`;
 
             const res = await fetch(url, {
-                headers: {
-                    "Authorization": `Bearer ${idToken}`
-                }
+                headers: { "Authorization": `Bearer ${idToken}` }
             });
 
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Erro ao obter URL de autenticação");
 
             if (data.url) {
-                window.location.href = data.url; // Redireciona para o Mercado Livre
+                window.location.href = data.url;
             }
         } catch (error: any) {
             showAlert("Erro", error.message, "error");
@@ -194,11 +219,18 @@ export default function MercadoLivreIntegrationPage() {
                         </div>
                         <div className="flex gap-2 w-full sm:w-auto mt-4 sm:mt-0">
                             <button 
+                                onClick={handleDisconnect}
+                                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center gap-2"
+                            >
+                                <LogOut className="w-4 h-4" />
+                                Desconectar
+                            </button>
+                            <button 
                                 onClick={handleConnect}
                                 className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-[#2d3277] border border-[#2d3277] hover:bg-gray-50 rounded-lg transition-colors flex items-center justify-center gap-2"
                             >
                                 <LogIn className="w-4 h-4" />
-                                Reconectar / Mudar Conta
+                                Reconectar
                             </button>
                         </div>
                     </div>
