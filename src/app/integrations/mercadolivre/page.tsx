@@ -112,13 +112,24 @@ export default function MercadoLivreIntegrationPage() {
             "Tem certeza que deseja desconectar sua conta do Mercado Livre? A sincronização de estoque será interrompida.",
             async () => {
                 try {
-                    const { doc, deleteDoc } = await import("firebase/firestore");
-                    const integrationRef = doc(db, "accounts", accountId, "integrations", "mercadolivre");
-                    await deleteDoc(integrationRef);
-                    
-                    setStatus(null);
-                    showAlert("Sucesso", "Conta desconectada com sucesso.", "success");
-                    fetchStatus();
+                    const idToken = await user!.getIdToken();
+                    const url = selectedAccountId 
+                        ? `/api/integrations/mercadolivre/disconnect?accountId=${selectedAccountId}`
+                        : `/api/integrations/mercadolivre/disconnect`;
+
+                    const res = await fetch(url, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${idToken}` }
+                    });
+
+                    if (res.ok) {
+                        setStatus(null);
+                        showAlert("Sucesso", "Conta desconectada com sucesso.", "success");
+                        fetchStatus();
+                    } else {
+                        const data = await res.json();
+                        throw new Error(data.error || "Erro ao desconectar");
+                    }
                 } catch (error: any) {
                     showAlert("Erro", "Falha ao desconectar: " + error.message, "error");
                 }
@@ -223,14 +234,7 @@ export default function MercadoLivreIntegrationPage() {
                                 className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center gap-2"
                             >
                                 <LogOut className="w-4 h-4" />
-                                Desconectar
-                            </button>
-                            <button 
-                                onClick={handleConnect}
-                                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-[#2d3277] border border-[#2d3277] hover:bg-gray-50 rounded-lg transition-colors flex items-center justify-center gap-2"
-                            >
-                                <LogIn className="w-4 h-4" />
-                                Reconectar
+                                Desconectar Conta
                             </button>
                         </div>
                     </div>
