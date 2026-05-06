@@ -11,8 +11,18 @@ export async function GET(request: NextRequest) {
         const error = searchParams.get("error");
         const errorDescription = searchParams.get("error_description");
 
-        const baseUrl = new URL(request.url).origin;
-        // Adjust redirection URL as needed based on your frontend routing
+        // Tenta pegar o host real dos headers (especialmente em ambientes de proxy como Firebase/GCP)
+        const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+        const proto = request.headers.get("x-forwarded-proto") || "https";
+        
+        let baseUrl;
+        if (host) {
+            baseUrl = `${proto}://${host}`;
+        } else {
+            // Fallback para o comportamento anterior caso não haja headers
+            baseUrl = new URL(request.url).origin;
+        }
+
         const redirectUrl = `${baseUrl}/integrations/mercadolivre?ml_status=`;
 
         if (error) {
@@ -50,7 +60,9 @@ export async function GET(request: NextRequest) {
 
     } catch (error: any) {
         console.error("Erro em Mercado Livre Callback API:", error);
-        const baseUrl = new URL(request.url).origin;
+        const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+        const proto = request.headers.get("x-forwarded-proto") || "https";
+        const baseUrl = host ? `${proto}://${host}` : new URL(request.url).origin;
         return NextResponse.redirect(`${baseUrl}/integrations/mercadolivre?ml_status=error`);
     }
 }
