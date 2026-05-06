@@ -128,20 +128,23 @@ export async function runGlobalFullSync() {
     console.log("[ML Full Sync] Starting global sync...");
     
     try {
-        const snapshot = await adminDb.collectionGroup("integrations")
-            .where("provider", "==", "mercadolivre")
-            .where("enabled", "==", true)
-            .get();
+        // Buscamos todas as integrações e filtramos em memória para evitar a necessidade de criar um índice composto no Firestore
+        const snapshot = await adminDb.collectionGroup("integrations").get();
 
-        if (snapshot.empty) {
+        const activeMLIntegrations = snapshot.docs.filter(doc => {
+            const data = doc.data();
+            return data.provider === 'mercadolivre' && data.enabled === true;
+        });
+
+        if (activeMLIntegrations.length === 0) {
             console.log("[ML Full Sync] No active Mercado Livre accounts found.");
             return { processed: 0 };
         }
 
-        console.log(`[ML Full Sync] Found ${snapshot.size} accounts to sync.`);
+        console.log(`[ML Full Sync] Found ${activeMLIntegrations.length} accounts to sync.`);
 
         const results = [];
-        for (const doc of snapshot.docs) {
+        for (const doc of activeMLIntegrations) {
             const accountId = doc.ref.parent.parent?.id;
             if (accountId) {
                 const result = await syncAccountFullInventory(accountId);
