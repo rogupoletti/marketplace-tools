@@ -5,8 +5,9 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get("Authorization");
     const cronSecret = process.env.CRON_SECRET;
 
-    // Se o segredo estiver configurado, exigimos a validação
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    // Validação obrigatória do segredo do Cron
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+        console.error("[CRON] Tentativa de acesso não autorizado ou CRON_SECRET não configurado.");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

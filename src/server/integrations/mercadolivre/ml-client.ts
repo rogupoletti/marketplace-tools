@@ -66,40 +66,74 @@ export class MercadoLivreClient {
   }
 
   public async fetchAllUserItems(userId: number, token: string): Promise<string[]> {
-    let allItemIds: string[] = [];
-    let offset = 0;
-    const limit = 50;
-    let total = 0;
-
-    do {
-      const response = await fetch(
-        `${ML_API_BASE_URL}/users/${userId}/items/search?offset=${offset}&limit=${limit}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
+    console.log(`[ML Client] Starting Deep Category Expansion for ${userId}...`);
+    
+    // 1. Descobrir categorias de Ativos e Pausados (amostra de 2000 itens)
+    let sampleIds: string[] = [];
+    const statuses = ['active', 'paused', 'not_specified', 'under_review'];
+    
+    for (const status of ['active', 'paused']) {
+      console.log(`[ML Client] Sampling items from status: ${status}`);
+      for (let offset = 0; offset < 1000; offset += 100) {
+        const url = `${ML_API_BASE_URL}/users/${userId}/items/search?offset=${offset}&limit=100&logistic_type=fulfillment&status=${status}`;
+        const res = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          sampleIds = sampleIds.concat(data.results);
+        } else {
+          break;
         }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch user items at offset ${offset}: ${errorText}`);
       }
+    }
 
-      const data: MLItemSearchResponse = await response.json();
-      
-      if (offset === 0) {
-        total = data.paging.total;
+    // 2. Descobrir os IDs de categoria desses itens
+    console.log(`[ML Client] Discovering categories from ${sampleIds.length} sample items...`);
+    const itemDetails = await this.fetchItemDetails(sampleIds, token);
+    const categoryIds = Array.from(new Set(itemDetails.map(item => item.category_id).filter(Boolean)));
+    console.log(`[ML Client] Found ${categoryIds.length} distinct categories.`);
+
+    // 3. Buscar todos os itens de cada categoria, desdobrando por status para furar o limite de 1000
+    let allItemIds: string[] = [...sampleIds];
+    
+    for (const catId of categoryIds) {
+      for (const status of statuses) {
+        let offset = 0;
+        let totalForBucket = 0;
+        console.log(`[ML Client] Fetching category ${catId} with status ${status}`);
+        
+        do {
+          const url = `${ML_API_BASE_URL}/users/${userId}/items/search?offset=${offset}&limit=100&logistic_type=fulfillment&category_id=${catId}&status=${status}`;
+          const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!res.ok) break;
+          const data = await res.json();
+          
+          if (offset === 0) totalForBucket = data.paging.total;
+          if (data.results && data.results.length > 0) {
+            allItemIds = allItemIds.concat(data.results);
+          } else {
+            break;
+          }
+
+          offset += 100;
+          if (offset >= 1000) {
+            if (totalForBucket > 1000) {
+              console.warn(`[ML Client] Bucket ${catId}/${status} has ${totalForBucket} items, but we can only fetch 1000.`);
+            }
+            break;
+          }
+          await new Promise(r => setTimeout(r, 20));
+        } while (offset < totalForBucket);
       }
-
-      allItemIds = allItemIds.concat(data.results);
-      offset += limit;
-
-      // Small delay to respect rate limits if needed (optional but recommended)
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    } while (offset < total);
-
-    return allItemIds;
+    }
+    
+    const uniqueIds = Array.from(new Set(allItemIds));
+    console.log(`[ML Client] Expansion complete. Found ${uniqueIds.length} unique items.`);
+    return uniqueIds;
   }
 
   public async fetchItemDetails(itemIds: string[], token: string): Promise<MLItem[]> {

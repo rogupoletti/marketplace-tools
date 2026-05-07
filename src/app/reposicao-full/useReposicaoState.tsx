@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect, useMemo, ReactNo
 import { ProdutoRaw, VendaRaw, ParametrosGlobais, UserOverrides, Filtros, ProdutoProcessado } from "./types";
 import { processProduct, getMaxDate } from "./core-logic";
 import { useAuth } from "@/lib/auth-context";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 
 interface ReposicaoContextData {
     produtosRaw: ProdutoRaw[];
@@ -21,6 +23,7 @@ interface ReposicaoContextData {
     setProdutosRaw: (p: ProdutoRaw[]) => void;
     setVendasRaw: (v: Record<string, VendaRaw[]>) => void;
     fetchVendasAnymarket: () => Promise<void>;
+    fetchMlInventory: () => Promise<void>;
     setParametros: (p: Partial<ParametrosGlobais>) => void;
     setFiltros: (f: Partial<Filtros>) => void;
     updateOverride: (sku: string, o: Partial<UserOverrides>) => void;
@@ -54,7 +57,7 @@ const DEFAULT_FILTROS: Filtros = {
 };
 
 export function ReposicaoProvider({ children }: { children: ReactNode }) {
-    const { user } = useAuth();
+    const { user, userData } = useAuth();
     const [isLoaded, setIsLoaded] = useState(false);
     const [produtosRaw, setProdutosRawState] = useState<ProdutoRaw[]>([]);
     const [vendasRaw, setVendasRawState] = useState<Record<string, VendaRaw[]>>({});
@@ -66,6 +69,8 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>([
         'sku', 'curvaABC', 'curvaABCFornecedor', 'mlbs', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao'
     ]);
+    const [mlInventory, setMlInventory] = useState<Record<string, number>>({});
+    const [isFetchingMl, setIsFetchingMl] = useState(false);
 
     // Load from LocalStorage
     useEffect(() => {
@@ -89,9 +94,8 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     // Auto-fetch sales from DB when user is logged in
     useEffect(() => {
         if (user && isLoaded) {
-            fetchVendasAnymarket().catch(() => {
-                // Silently fail or handle error - already logged in fetchVendasAnymarket
-            });
+            fetchVendasAnymarket().catch(() => {});
+            fetchMlInventory().catch(() => {});
         }
     }, [user, isLoaded]);
 
@@ -124,6 +128,28 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         saveAction(produtosRaw, v, parametros, overridesGlobais);
     };
 
+    const fetchMlInventory = async () => {
+        if (!user) return;
+        setIsFetchingMl(true);
+        try {
+            console.log("[Reposicao] Fetching ML inventory from API...");
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/integrations/mercadolivre/inventory", {
+                headers: { "Authorization": `Bearer ${idToken}` }
+            });
+            const data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error || "Erro ao buscar inventário");
+
+            console.log(`[Reposicao] Loaded inventory for ${Object.keys(data.inventory || {}).length} MLBs from API`);
+            setMlInventory(data.inventory || {});
+        } catch (e) {
+            console.error("Erro ao buscar inventário do ML via API:", e);
+        } finally {
+            setIsFetchingMl(false);
+        }
+    };
+
     const fetchVendasAnymarket = async () => {
         if (!user) return;
         try {
@@ -138,7 +164,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             
             data.sales.forEach((sale: any) => {
                 const isMeli = sale.marketplace?.toUpperCase().includes("MERCADO") && sale.marketplace?.toUpperCase().includes("LIVRE");
-                if (!isMeli) return; // Filtro de MELI apenas
+                if (!isMeli) return;
 
                 const sku = sale.sku;
                 if (!novasVendas[sku]) {
@@ -157,7 +183,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             setVendasRaw(novasVendas);
         } catch (e) {
             console.error("Erro ao importar da Anymarket:", e);
-            throw e; // Lança para o componente lidar com UI
         }
     };
 
@@ -217,7 +242,38 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             const sku = prod.sku;
             const vendas = vendasRaw[sku] || [];
             const overrides = overridesGlobais[sku] || { ativo: true };
-            return processProduct(prod, vendas, parametros, overrides, maxSalesDate);
+            
+            // SUBSTITUIÇÃO DO ESTOQUE FULL PELO DADO DA API
+            // Limpa o campo MLB da planilha (remove espaços, etc)
+            const rawMlbs = prod.mlb ? String(prod.mlb).split(/[,\s]+/).map(id => id.trim()).filter(Boolean) : [];
+            
+            let totalEstoqueApi = 0;
+            let foundInApi = false;
+            let matchedMlbs: string[] = [];
+
+            rawMlbs.forEach(mlb => {
+                if (mlInventory[mlb] !== undefined) {
+                    totalEstoqueApi += mlInventory[mlb];
+                    foundInApi = true;
+                    matchedMlbs.push(mlb);
+                }
+            });
+
+            if (foundInApi) {
+                console.log(`[Reposicao] SKU ${sku} atualizado com estoque API: ${totalEstoqueApi} (MLBs: ${matchedMlbs.join(', ')})`);
+            } else if (rawMlbs.length > 0) {
+                console.warn(`[Reposicao] SKU ${sku} tem MLBs (${rawMlbs.join(', ')}), mas nenhum foi encontrado na base sincronizada.`);
+            }
+
+            const prodWithUpdatedStock = {
+                ...prod,
+                // Se encontramos algum dado na API, usamos ele. 
+                // Se não encontramos nada NA BASE mas o produto TEM MLBs, talvez devêssemos zerar?
+                // Por enquanto mantemos o do Excel apenas se não houver NENHUM dado na API para aquele MLB.
+                estoqueFull: foundInApi ? totalEstoqueApi : prod.estoqueFull 
+            };
+
+            return processProduct(prodWithUpdatedStock, vendas, parametros, overrides, maxSalesDate);
         });
 
         if (processed.length === 0) return [];
@@ -333,6 +389,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 setProdutosRaw,
                 setVendasRaw,
                 fetchVendasAnymarket,
+                fetchMlInventory,
                 setParametros,
                 setFiltros: (f) => setFiltrosState({ ...filtros, ...f }),
                 updateOverride,
