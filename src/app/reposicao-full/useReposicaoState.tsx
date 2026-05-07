@@ -115,13 +115,13 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         }));
     }, [produtosRaw, vendasRaw, parametros, overridesGlobais, colunasVisiveis, isLoaded]);
 
-    // Auto-fetch sales from DB when user is logged in
+    // Auto-fetch sales from DB when user is logged in or products are uploaded
     useEffect(() => {
         if (user && isLoaded) {
             fetchVendasAnymarket().catch(() => {});
             fetchMlInventory().catch(() => {});
         }
-    }, [user, isLoaded]);
+    }, [user, isLoaded, produtosRaw.length]);
 
     const setProdutosRaw = (p: ProdutoRaw[]) => {
         setProdutosRawState(p);
@@ -132,7 +132,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     };
 
     const fetchMlInventory = async () => {
-        if (!user) return;
+        if (!user || isFetchingMl) return;
         setIsFetchingMl(true);
         try {
             console.log("[Reposicao] Fetching ML inventory from API...");
@@ -154,7 +154,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     };
 
     const fetchVendasAnymarket = async () => {
-        if (!user) return;
+        if (!user || isFetchingSales) return;
         setIsFetchingSales(true);
         try {
             const idToken = await user.getIdToken();

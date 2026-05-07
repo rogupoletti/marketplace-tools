@@ -11,11 +11,11 @@ import { GlobalParams } from "./components/GlobalParams";
 import { SidebarFilters } from "./components/SidebarFilters";
 import { DataTable } from "./components/DataTable";
 import { Modals } from "./components/Modals";
-import { Edit2, Download, Truck, Clock } from "lucide-react";
+import { Edit2, Download, Truck, Clock, RefreshCw } from "lucide-react";
 import { utils, writeFile } from 'xlsx';
 
 export function ReposicaoFullContent() {
-    const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, recalcularAgora, limparDados } = useReposicaoState();
+    const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, recalcularAgora, limparDados, fetchVendasAnymarket, fetchMlInventory } = useReposicaoState();
     const { user, loading, userData } = useAuth();
     const { showAlert, showConfirm } = useUI();
     const router = useRouter();
@@ -241,15 +241,27 @@ export function ReposicaoFullContent() {
                         </span>
                         <button
                             onClick={() => {
-                                showConfirm("Sincronizar Dados", "Isso apagará os dados atuais para subir uma nova base. Deseja continuar?", () => {
-                                    limparDados();
-                                    showAlert("Sucesso", "Dados limpos. Você pode subir uma nova base agora.", "success");
-                                });
+                                fetchVendasAnymarket();
+                                fetchMlInventory();
+                                showAlert("Sincronizando", "Buscando dados atualizados das integrações...", "info");
                             }}
                             className="flex items-center gap-1.5 text-[#2d3277] font-semibold hover:text-[#2d3277]/80 cursor-pointer"
                         >
-                            <Clock className="w-4 h-4" />
+                            <RefreshCw className="w-4 h-4" />
                             Sincronizar Agora
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                showConfirm("Limpar Tudo", "Isso apagará todos os produtos e vendas carregados localmente. Deseja continuar?", () => {
+                                    limparDados();
+                                    showAlert("Sucesso", "Dados limpos com sucesso.", "success");
+                                });
+                            }}
+                            className="flex items-center gap-1.5 text-red-600 font-semibold hover:text-red-700 cursor-pointer"
+                        >
+                            <Clock className="w-4 h-4" />
+                            Limpar Tudo
                         </button>
                     </div>
                 </div>
