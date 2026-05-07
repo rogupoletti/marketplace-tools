@@ -1,11 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode, useRef } from "react";
 import { ProdutoRaw, VendaRaw, ParametrosGlobais, UserOverrides, Filtros, ProdutoProcessado } from "./types";
 import { processProduct, getMaxDate } from "./core-logic";
 import { useAuth } from "@/lib/auth-context";
-import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 
 interface ReposicaoContextData {
     produtosRaw: ProdutoRaw[];
@@ -18,6 +16,8 @@ interface ReposicaoContextData {
     produtosFiltrados: ProdutoProcessado[];
     maxSalesDate: Date | null;
     lastUpdate: Date | null;
+    isFetchingSales: boolean;
+    isFetchingMl: boolean;
 
     // Actions
     setProdutosRaw: (p: ProdutoRaw[]) => void;
@@ -57,7 +57,7 @@ const DEFAULT_FILTROS: Filtros = {
 };
 
 export function ReposicaoProvider({ children }: { children: ReactNode }) {
-    const { user, userData } = useAuth();
+    const { user } = useAuth();
     const [isLoaded, setIsLoaded] = useState(false);
     const [produtosRaw, setProdutosRawState] = useState<ProdutoRaw[]>([]);
     const [vendasRaw, setVendasRawState] = useState<Record<string, VendaRaw[]>>({});
@@ -71,6 +71,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     ]);
     const [mlInventory, setMlInventory] = useState<Record<string, number>>({});
     const [isFetchingMl, setIsFetchingMl] = useState(false);
+    const [isFetchingSales, setIsFetchingSales] = useState(false);
 
     // Load from LocalStorage
     useEffect(() => {
@@ -91,6 +92,29 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         setIsLoaded(true);
     }, []);
 
+    // Save to LocalStorage - Use effect to avoid stale closures and ensure consistency
+    const isFirstRun = useRef(true);
+    useEffect(() => {
+        if (!isLoaded) return;
+        
+        // Skip first run after loading to avoid immediately overwriting with same data
+        if (isFirstRun.current) {
+            isFirstRun.current = false;
+            return;
+        }
+
+        const now = new Date();
+        setLastUpdate(now);
+        localStorage.setItem("@SellerDock:ReposicaoFull", JSON.stringify({
+            produtosRaw,
+            vendasRaw,
+            parametros,
+            overridesGlobais,
+            lastUpdate: now.toISOString(),
+            colunasVisiveis,
+        }));
+    }, [produtosRaw, vendasRaw, parametros, overridesGlobais, colunasVisiveis, isLoaded]);
+
     // Auto-fetch sales from DB when user is logged in
     useEffect(() => {
         if (user && isLoaded) {
@@ -99,33 +123,12 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         }
     }, [user, isLoaded]);
 
-    // Save to LocalStorage
-    const saveAction = (
-        pRaw: ProdutoRaw[],
-        vRaw: Record<string, VendaRaw[]>,
-        params: ParametrosGlobais,
-        overrides: Record<string, UserOverrides>
-    ) => {
-        const now = new Date();
-        setLastUpdate(now);
-        localStorage.setItem("@SellerDock:ReposicaoFull", JSON.stringify({
-            produtosRaw: pRaw,
-            vendasRaw: vRaw,
-            parametros: params,
-            overridesGlobais: overrides,
-            lastUpdate: now.toISOString(),
-            colunasVisiveis: colunasVisiveis,
-        }));
-    };
-
     const setProdutosRaw = (p: ProdutoRaw[]) => {
         setProdutosRawState(p);
-        saveAction(p, vendasRaw, parametros, overridesGlobais);
     };
 
     const setVendasRaw = (v: Record<string, VendaRaw[]>) => {
         setVendasRawState(v);
-        saveAction(produtosRaw, v, parametros, overridesGlobais);
     };
 
     const fetchMlInventory = async () => {
@@ -152,6 +155,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
     const fetchVendasAnymarket = async () => {
         if (!user) return;
+        setIsFetchingSales(true);
         try {
             const idToken = await user.getIdToken();
             const res = await fetch("/api/reposicao-full/sales", {
@@ -161,12 +165,17 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             if (!res.ok) throw new Error(data.error || "Erro ao buscar vendas");
 
             const novasVendas: Record<string, VendaRaw[]> = {};
+            const sales = data.sales || [];
             
-            data.sales.forEach((sale: any) => {
-                const isMeli = sale.marketplace?.toUpperCase().includes("MERCADO") && sale.marketplace?.toUpperCase().includes("LIVRE");
+            sales.forEach((sale: any) => {
+                // User feedback: check specifically for "MERCADO_LIVRE"
+                const marketplace = (sale.marketplace || "").toUpperCase();
+                const isMeli = marketplace === "MERCADO_LIVRE";
                 if (!isMeli) return;
 
                 const sku = sale.sku;
+                if (!sku) return;
+
                 if (!novasVendas[sku]) {
                     novasVendas[sku] = [];
                 }
@@ -174,41 +183,27 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 novasVendas[sku].push({
                     sku: sale.sku,
                     data: sale.date,
-                    vendaQtd: sale.vendaQtd,
-                    vendaValorLiquido: sale.vendaValorLiquido,
-                    vendaValorBruto: sale.vendaValorBruto,
+                    vendaQtd: sale.vendaQtd || 0,
+                    vendaValorLiquido: sale.vendaValorLiquido || 0,
+                    vendaValorBruto: sale.vendaValorBruto || 0,
                 });
             });
 
-            setVendasRaw(novasVendas);
+            setVendasRawState(novasVendas);
         } catch (e) {
             console.error("Erro ao importar da Anymarket:", e);
+        } finally {
+            setIsFetchingSales(false);
         }
     };
 
     const setParametros = (p: Partial<ParametrosGlobais>) => {
-        const newParams = { ...parametros, ...p };
-        setParametrosState(newParams);
-        saveAction(produtosRaw, vendasRaw, newParams, overridesGlobais);
+        setParametrosState(prev => ({ ...prev, ...p }));
     };
 
     const updateOverride = (sku: string, o: Partial<UserOverrides>) => {
-        const newOverrides = { ...overridesGlobais };
-        newOverrides[sku] = { ...(newOverrides[sku] || { ativo: true }), ...o };
-        // Maintain inativoDesde logic
-        if (o.ativo === false && !newOverrides[sku].inativoDesde) {
-            newOverrides[sku].inativoDesde = new Date().toISOString();
-        } else if (o.ativo === true) {
-            delete newOverrides[sku].inativoDesde;
-            delete newOverrides[sku].motivoInativo;
-        }
-        setOverridesGlobaisState(newOverrides);
-        saveAction(produtosRaw, vendasRaw, parametros, newOverrides);
-    };
-
-    const updateOverridesBulk = (skus: string[], o: Partial<UserOverrides>) => {
-        const newOverrides = { ...overridesGlobais };
-        skus.forEach(sku => {
+        setOverridesGlobaisState(prev => {
+            const newOverrides = { ...prev };
             newOverrides[sku] = { ...(newOverrides[sku] || { ativo: true }), ...o };
             if (o.ativo === false && !newOverrides[sku].inativoDesde) {
                 newOverrides[sku].inativoDesde = new Date().toISOString();
@@ -216,13 +211,29 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 delete newOverrides[sku].inativoDesde;
                 delete newOverrides[sku].motivoInativo;
             }
+            return newOverrides;
         });
-        setOverridesGlobaisState(newOverrides);
-        saveAction(produtosRaw, vendasRaw, parametros, newOverrides);
+    };
+
+    const updateOverridesBulk = (skus: string[], o: Partial<UserOverrides>) => {
+        setOverridesGlobaisState(prev => {
+            const newOverrides = { ...prev };
+            skus.forEach(sku => {
+                newOverrides[sku] = { ...(newOverrides[sku] || { ativo: true }), ...o };
+                if (o.ativo === false && !newOverrides[sku].inativoDesde) {
+                    newOverrides[sku].inativoDesde = new Date().toISOString();
+                } else if (o.ativo === true) {
+                    delete newOverrides[sku].inativoDesde;
+                    delete newOverrides[sku].motivoInativo;
+                }
+            });
+            return newOverrides;
+        });
     };
 
     const recalcularAgora = () => {
-        saveAction(produtosRaw, vendasRaw, parametros, overridesGlobais);
+        // Just trigger a re-save with new timestamp
+        setLastUpdate(new Date());
     };
     
     const limparDados = () => {
@@ -243,8 +254,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             const vendas = vendasRaw[sku] || [];
             const overrides = overridesGlobais[sku] || { ativo: true };
             
-            // SUBSTITUIÇÃO DO ESTOQUE FULL PELO DADO DA API
-            // Limpa o campo MLB da planilha (remove espaços, etc)
             const rawMlbs = prod.mlb ? String(prod.mlb).split(/[,\s]+/).map(id => id.trim()).filter(Boolean) : [];
             
             let totalEstoqueApi = 0;
@@ -259,17 +268,8 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 }
             });
 
-            if (foundInApi) {
-                console.log(`[Reposicao] SKU ${sku} atualizado com estoque API: ${totalEstoqueApi} (MLBs: ${matchedMlbs.join(', ')})`);
-            } else if (rawMlbs.length > 0) {
-                console.warn(`[Reposicao] SKU ${sku} tem MLBs (${rawMlbs.join(', ')}), mas nenhum foi encontrado na base sincronizada.`);
-            }
-
             const prodWithUpdatedStock = {
                 ...prod,
-                // Se encontramos algum dado na API, usamos ele. 
-                // Se não encontramos nada NA BASE mas o produto TEM MLBs, talvez devêssemos zerar?
-                // Por enquanto mantemos o do Excel apenas se não houver NENHUM dado na API para aquele MLB.
                 estoqueFull: foundInApi ? totalEstoqueApi : prod.estoqueFull 
             };
 
@@ -299,8 +299,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
         // 3. Calculate Supplier ABC Curve
         const abcMapSupplier: Record<string, "A" | "B" | "C" | "Z"> = {};
-        
-        // Group by supplier
         const bySupplier: Record<string, typeof processed> = {};
         processed.forEach(p => {
             const s = p.fornecedor || "SEM FORNECEDOR";
@@ -308,7 +306,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             bySupplier[s].push(p);
         });
 
-        // Calculate ABC per supplier group
         Object.values(bySupplier).forEach(group => {
             const groupWithSales = group
                 .filter(p => p.vendasValorBrutoPeriodo > 0)
@@ -327,18 +324,16 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             });
         });
 
-        // 4. Assign to all products
         return processed.map(p => ({
             ...p,
             curvaABC: abcMapGlobal[p.sku] || "Z",
             curvaABCFornecedor: abcMapSupplier[p.sku] || "Z"
         }));
 
-    }, [produtosRaw, vendasRaw, parametros, overridesGlobais, maxSalesDate]);
+    }, [produtosRaw, vendasRaw, parametros, overridesGlobais, maxSalesDate, mlInventory]);
 
     const produtosFiltrados = useMemo(() => {
         return produtosProcessados.filter(item => {
-            // Busca Global (SKU ou desc ou MLB)
             if (filtros.busca) {
                 const query = filtros.busca.toLowerCase();
                 const matchesSku = item.sku.toLowerCase().includes(query);
@@ -346,32 +341,19 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 const matchesMlb = item.mlbs.some(mlb => mlb.toLowerCase().includes(query));
                 if (!matchesSku && !matchesDesc && !matchesMlb) return false;
             }
-
-            // Status
             if (filtros.status.length > 0) {
                 if (!filtros.status.includes(item.status)) return false;
             }
-
-            // Marca
             if (filtros.marca && item.marca !== filtros.marca) return false;
-
-            // Fornecedor
             if (filtros.fornecedor && item.fornecedor !== filtros.fornecedor) return false;
-
-            // Giro Minimo
             if (filtros.giroMinimo > 0 && item.giroDiarioQtd < filtros.giroMinimo) return false;
-
-            // Estoque Max
             if (filtros.estoqueMax !== null && item.estoqueFull > filtros.estoqueMax) return false;
-
-            // Reposicao Min
             if (filtros.reposicaoMin !== null && item.sugestaoReposicao < filtros.reposicaoMin) return false;
-
             return true;
         });
     }, [produtosProcessados, filtros]);
 
-    if (!isLoaded) return null; // or a loading spinner
+    if (!isLoaded) return null; 
 
     return (
         <ReposicaoContext.Provider
@@ -385,6 +367,8 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 produtosFiltrados,
                 maxSalesDate,
                 lastUpdate,
+                isFetchingSales,
+                isFetchingMl,
 
                 setProdutosRaw,
                 setVendasRaw,
@@ -400,20 +384,14 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 setSelectedSkus: setSelectedSkusState,
                 toggleSelecionarTodos: (skus) => {
                     if (selectedSkus.length === skus.length && skus.length > 0) {
-                        setSelectedSkusState([]); // deselect all
+                        setSelectedSkusState([]); 
                     } else {
-                        setSelectedSkusState(skus); // select all
+                        setSelectedSkusState(skus); 
                     }
                 },
                 colunasVisiveis,
                 setColunasVisiveis: (cols: string[]) => {
                     setColunasVisiveisState(cols);
-                    const stored = localStorage.getItem("@SellerDock:ReposicaoFull");
-                    if (stored) {
-                        const data = JSON.parse(stored);
-                        data.colunasVisiveis = cols;
-                        localStorage.setItem("@SellerDock:ReposicaoFull", JSON.stringify(data));
-                    }
                 }
             }}
         >

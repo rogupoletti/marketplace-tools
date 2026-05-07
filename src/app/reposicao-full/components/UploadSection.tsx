@@ -84,7 +84,7 @@ function DragDropBox({ title, description, onDrop, isLoading, isSuccess, error }
 }
 
 export function UploadSection() {
-    const { setProdutosRaw, produtosRaw, vendasRaw, fetchVendasAnymarket } = useReposicaoState();
+    const { setProdutosRaw, produtosRaw, vendasRaw, fetchVendasAnymarket, isFetchingSales, isFetchingMl } = useReposicaoState();
     const { showAlert } = useUI();
 
     const [loadingProd, setLoadingProd] = useState(false);
@@ -148,15 +148,35 @@ export function UploadSection() {
 
             {!hasVendas && (
                 <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3 text-yellow-800 max-w-xl w-full">
-                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    {isFetchingSales ? (
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-yellow-600 shrink-0 mt-0.5" />
+                    ) : (
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    )}
                     <div>
-                        <h4 className="font-semibold text-sm">Nenhum dado de venda encontrado</h4>
+                        <h4 className="font-semibold text-sm">
+                            {isFetchingSales ? "Sincronizando vendas..." : "Nenhum dado de venda encontrado"}
+                        </h4>
                         <p className="text-xs mt-1">
-                            Para calcular a reposição, precisamos dos dados de vendas. Vá em 
-                            <a href="/integrations/anymarket" className="mx-1 font-bold underline hover:text-yellow-900">Integrações</a> 
-                            e faça a Carga Inicial.
+                            {isFetchingSales 
+                                ? "Buscando dados da Anymarket. Isso pode levar alguns segundos." 
+                                : (
+                                    <>
+                                        Para calcular a reposição, precisamos dos dados de vendas. Vá em 
+                                        <a href="/integrations/anymarket" className="mx-1 font-bold underline hover:text-yellow-900">Integrações</a> 
+                                        e faça a Carga Inicial.
+                                    </>
+                                )
+                            }
                         </p>
                     </div>
+                </div>
+            )}
+            
+            {isFetchingMl && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3 text-blue-800 max-w-xl w-full">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                    <p className="text-xs font-medium">Sincronizando estoque via API do Mercado Livre...</p>
                 </div>
             )}
         </div>
