@@ -1,216 +1,278 @@
 import { read, utils } from 'xlsx';
-import { ProdutoRaw, VendaRaw } from './types';
 
 /**
- * Normalizes string keys by removing accents, spaces and converting to lowercase
- * e.g., "Descrição" -> "descricao", "Estoque Full" -> "estoquefull"
+ * Parses a numeric value, handling Brazilian formatting (comma as decimal).
  */
-function normalizeKey(str: string): string {
-    return str
-        .toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9_]/g, "");
-}
-
-/**
- * Normalizes Brazilian numbers (comma as decimal, dot as thousands)
- */
-function parseBrazilianNumber(val: any): number {
+function parseNum(val: any): number {
     if (typeof val === 'number') return val;
     if (!val) return 0;
     const str = String(val).trim();
     if (!str) return 0;
-    // Remove dots (thousands) and replace comma with dot (decimal)
-    const clean = str.replace(/\./g, '').replace(',', '.').replace(/[^\d\.-]/g, '');
-    const parsed = parseFloat(clean);
-    return isNaN(parsed) ? 0 : parsed;
+    const clean = str.replace(/\./g, '').replace(',', '.').replace(/[^\d.\-]/g, '');
+    const n = parseFloat(clean);
+    return isNaN(n) ? 0 : n;
 }
 
 /**
- * Converts Excel Serial Date to an ISO date string "YYYY-MM-DD"
+ * Normalizes a header string for comparison: lowercase, no accents, no spaces.
  */
-function excelSerialToDateString(serial: number | string | Date): string {
-    if (serial instanceof Date) {
-        if (isNaN(serial.getTime())) return new Date().toISOString().split('T')[0];
-        return serial.toISOString().split('T')[0];
-    }
-    if (typeof serial === 'string') {
-        const s = serial.trim();
-        if (s.includes('/')) {
-            const parts = s.split('/');
-            if (parts.length === 3) {
-                const [d, m, y] = parts;
-                const year = y.length === 2 ? `20${y}` : y;
-                return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-            }
-        }
-        return s;
-    }
-    if (typeof serial === 'number') {
-        const utc_days = Math.floor(serial - 25569);
-        const utc_value = utc_days * 86400;
-        const date = new Date(utc_value * 1000);
-        if (!isNaN(date.getTime())) {
-            return date.toISOString().split('T')[0];
-        }
-    }
-    return String(serial);
+function norm(s: any): string {
+    return String(s ?? '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, '');
 }
 
 /**
- * Helper to process the Products/Stock Excel file
+ * Parses the Mercado Livre Full stock report (Excel) to extract "Em Trânsito" data.
+ *
+ * Expected Excel layout (sheet "Resumo"):
+ *   - Row 10 (0-indexed row 9): Main headers — "Código ML", "SKU", "Produto", etc.
+ *   - Row 11 (0-indexed row 10): Sub-headers — "Entrada pendente" (col N), "Em transferência" (col O)
+ *   - Row 13+ (0-indexed row 12+): Data rows
+ *   - Column D: SKU
+ *
+ * The function sums columns N (Entrada pendente) and O (Em transferência) per SKU.
+ *
+ * Returns a map of { sku: emTransf }.
+ * This import ONLY provides data for the "Em Transf" column — no other fields are touched.
  */
-export async function parseProdutosExcel(file: File): Promise<{ data: ProdutoRaw[], errors: string[] }> {
-    return new Promise((resolve, reject) => {
+export async function parseTransitoExcel(
+    file: File
+): Promise<{ data: Record<string, number>; errors: string[] }> {
+    return new Promise((resolve) => {
         const reader = new FileReader();
+
         reader.onload = (e) => {
             try {
-                const data = e.target?.result;
-                const workbook = read(data, { type: 'binary', cellDates: true });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
+                const buffer = e.target?.result as ArrayBuffer;
+                const workbook = read(new Uint8Array(buffer), { type: 'array', cellDates: true });
 
-                // Read as array of arrays to get headers
-                const rawJson: any[][] = utils.sheet_to_json(worksheet, { header: 1 });
-                if (rawJson.length < 2) return resolve({ data: [], errors: ["O arquivo parece estar vazio ou não possui cabeçalhos."] });
+                // Prefer "Resumo" sheet, fallback to first sheet
+                const sheetName =
+                    workbook.SheetNames.find((s) => s.toLowerCase().includes('resumo')) ||
+                    workbook.SheetNames[0];
+                const ws = workbook.Sheets[sheetName];
 
-                const headers = rawJson[0].map(h => normalizeKey(String(h || '')));
-
-                // Map required keys to our expected object model keys
-                const keyMap: Record<string, keyof ProdutoRaw> = {
-                    'sku': 'sku',
-                    'descricao': 'descricao',
-                    'title': 'descricao',
-                    'description': 'descricao',
-                    'mlb': 'mlb',
-                    'mlbcatalogo': 'mlbCatalogo',
-                    'catalog_mlb': 'mlbCatalogo',
-                    'marca': 'marca',
-                    'brand': 'marca',
-                    'fornecedor': 'fornecedor',
-                    'industry': 'fornecedor',
-                    'supplier': 'fornecedor',
-                    'estoquefull': 'estoqueFull',
-                    'available_inventory': 'estoqueFull',
-                    'inv_meli_full': 'estoqueFull',
-                    'estoqueempresa': 'estoqueEmpresa',
-                    'dmx_inv': 'estoqueEmpresa',
-                    'inv_company': 'estoqueEmpresa',
-                    'precoatual': 'precoAtual',
-                    'promotion_amount': 'precoAtual',
-                    'current_price': 'precoAtual',
-                    'custoatual': 'custoAtual',
-                    'cost': 'custoAtual',
-                    'tamanhodacaixa': 'tamanhoCaixa',
-                    'tamanhocaixa': 'tamanhoCaixa',
-                    'tamcaixas': 'tamanhoCaixa',
-                    'tamcaixa': 'tamanhoCaixa',
-                    'caixa': 'tamanhoCaixa',
-                    'quantity_per_crate': 'tamanhoCaixa',
-                    'quantity_per_box': 'tamanhoCaixa',
-                    'qty_per_unit_of_measure': 'tamanhoCaixa',
-                    'inativo': 'inativo',
-                    'motivoinativo': 'motivoInativo',
-                    'emtransf': 'emTransf'
-                };
-
-                const mappedKeys = new Set(headers.map(h => keyMap[h]).filter(Boolean));
-                const requiredInternalKeys = ['sku', 'descricao', 'estoqueFull'];
-                const missingKeys = requiredInternalKeys.filter(k => !mappedKeys.has(k as any));
-
-                // Debug logs for diagnosis
-                console.log("[ExcelParse] Headers found:", headers);
-                console.log("[ExcelParse] Mapped keys:", Array.from(mappedKeys));
-
-                if (missingKeys.length > 0) {
-                    return resolve({ data: [], errors: [`Colunas obrigatórias ausentes: ${missingKeys.join(', ')}`] });
+                if (!ws['!ref']) {
+                    return resolve({ data: {}, errors: ['Planilha vazia.'] });
                 }
 
-                // Process rows into our type Map
-                const mapBySku = new Map<string, ProdutoRaw>();
+                const range = utils.decode_range(ws['!ref']);
+                console.log(`[TransitoParse] Sheet "${sheetName}", range: ${ws['!ref']}`);
 
-                for (let i = 1; i < rawJson.length; i++) {
-                    const row = rawJson[i];
-                    if (!row || row.length === 0) continue;
+                // ── Step 1: Find column indices by scanning header rows (rows 0-15) ──
+                // We scan the worksheet cells directly to handle merged cells reliably.
+                let skuCol = -1;
+                let entradaPendenteCol = -1;
+                let emTransferenciaCol = -1;
+                let headerRow = -1;
 
-                    const obj: Record<string, any> = {};
-                    for (let j = 0; j < headers.length; j++) {
-                        const cellValue = row[j];
-                        const header = headers[j];
-                        if (keyMap[header]) {
-                            obj[keyMap[header]] = cellValue;
+                const maxScanRow = Math.min(15, range.e.r);
+                const maxScanCol = Math.min(30, range.e.c);
+
+                // Phase 1: Find the SKU column and its header row
+                for (let r = 0; r <= maxScanRow; r++) {
+                    for (let c = range.s.c; c <= maxScanCol; c++) {
+                        const cell = ws[utils.encode_cell({ r, c })];
+                        if (!cell) continue;
+                        if (norm(cell.v) === 'sku') {
+                            skuCol = c;
+                            headerRow = r;
+                            break;
                         }
                     }
+                    if (skuCol >= 0) break;
+                }
 
-                    if (!obj.sku) continue; // skip empty skus
-
-                    const sku = String(obj.sku).trim();
-                    const existing = mapBySku.get(sku);
-
-                    const currentMlb = String(obj.mlb || '').trim();
-                    const currentTamCaixa = parseBrazilianNumber(obj.tamanhoCaixa);
-
-                    // Small debug sample
-                    if (i < 10) {
-                        console.log(`[ExcelParse] Row ${i} (SKU: ${sku}):`, {
-                            rawTamCaixa: obj.tamanhoCaixa,
-                            parsedTamCaixa: currentTamCaixa
-                        });
-                    }
-
-                    if (existing) {
-                        // Consolidate stocks
-                        existing.estoqueFull = (existing.estoqueFull || 0) + parseBrazilianNumber(obj.estoqueFull || 0);
-                        existing.estoqueEmpresa = (existing.estoqueEmpresa || 0) + parseBrazilianNumber(obj.estoqueEmpresa || 0);
-                        existing.emTransf = (existing.emTransf || 0) + parseBrazilianNumber(obj.emTransf || 0);
-
-                        // Combine MLBs
-                        const mlbSet = new Set([
-                            ...existing.mlb.split(/[,;\s]+/).map(s => s.trim()),
-                            ...currentMlb.split(/[,;\s]+/).map(s => s.trim())
-                        ].filter(Boolean));
-                        existing.mlb = Array.from(mlbSet).join(', ');
-
-                        // If existing has no box size (is 1) and we found one > 1, update it
-                        if (existing.tamanhoCaixa <= 1 && currentTamCaixa > 1) {
-                            existing.tamanhoCaixa = currentTamCaixa;
-                        }
-                    } else {
-                        // Boolean conversion for 'inativo'
-                        let inativo = false;
-                        if (obj.inativo !== undefined) {
-                            const val = String(obj.inativo).toLowerCase().trim();
-                            if (val === 'true' || val === '1' || val === 'sim' || val === 's' || val === 'inativo') {
-                                inativo = true;
+                // Phase 2: Find sub-headers ONLY near the header row (same row to +2)
+                // This avoids matching summary text like "Entrada pendente" in the
+                // info section at the top of the sheet.
+                if (headerRow >= 0) {
+                    for (let r = headerRow; r <= Math.min(headerRow + 2, range.e.r); r++) {
+                        for (let c = range.s.c; c <= maxScanCol; c++) {
+                            const cell = ws[utils.encode_cell({ r, c })];
+                            if (!cell) continue;
+                            const val = norm(cell.v);
+                            if (val === 'entradapendente' && entradaPendenteCol === -1) {
+                                entradaPendenteCol = c;
+                            }
+                            if (val === 'emtransferencia' && emTransferenciaCol === -1) {
+                                emTransferenciaCol = c;
                             }
                         }
-
-                        mapBySku.set(sku, {
-                            sku: sku,
-                            descricao: String(obj.descricao || ''),
-                            mlb: currentMlb,
-                            mlbCatalogo: String(obj.mlbCatalogo || ''),
-                            marca: String(obj.marca || ''),
-                            fornecedor: String(obj.fornecedor || ''),
-                            estoqueFull: parseBrazilianNumber(obj.estoqueFull || 0),
-                            estoqueEmpresa: parseBrazilianNumber(obj.estoqueEmpresa || 0),
-                            precoAtual: parseBrazilianNumber(obj.precoAtual || 0),
-                            custoAtual: parseBrazilianNumber(obj.custoAtual || 0),
-                            tamanhoCaixa: currentTamCaixa > 0 ? currentTamCaixa : 1,
-                            emTransf: parseBrazilianNumber(obj.emTransf || 0),
-                            inativo: inativo,
-                            motivoInativo: String(obj.motivoInativo || '')
-                        });
                     }
                 }
 
-                resolve({ data: Array.from(mapBySku.values()), errors: [] });
+                console.log(`[TransitoParse] Detected — SKU col: ${skuCol}, Entrada pendente col: ${entradaPendenteCol}, Em transferência col: ${emTransferenciaCol}, Header row: ${headerRow}`);
+
+                if (skuCol === -1) {
+                    return resolve({ data: {}, errors: ['Coluna "SKU" não encontrada nas primeiras linhas da planilha.'] });
+                }
+
+                // ── Step 2: Find the first data row ──
+                // Data starts after headers/sub-headers. We scan from headerRow+1 downwards
+                // and pick the first row where the SKU cell looks like an actual SKU value.
+                const headerKeywords = new Set([
+                    'sku', 'entradapendente', 'emtransferencia', 'devolvidas',
+                    'aptas', 'extraviadas', 'naoaptas', 'emrevisao',
+                    'temporariamentenaoaptas', 'vendascanceladas',
+                    'devolvidaspelocomprador', 'aptasparavenda',
+                    'naoaptas', 'noaptas',
+                ]);
+
+                let dataStartRow = -1;
+                for (let r = headerRow + 1; r <= Math.min(headerRow + 5, range.e.r); r++) {
+                    const cell = ws[utils.encode_cell({ r, c: skuCol })];
+                    if (!cell || cell.v === undefined || cell.v === null) continue;
+
+                    const cellNorm = norm(cell.v);
+                    if (cellNorm && cellNorm !== '0' && !headerKeywords.has(cellNorm)) {
+                        dataStartRow = r;
+                        break;
+                    }
+                }
+
+                if (dataStartRow === -1) {
+                    return resolve({ data: {}, errors: ['Não foi possível localizar a primeira linha de dados após os cabeçalhos.'] });
+                }
+
+                console.log(`[TransitoParse] Data starts at row ${dataStartRow}`);
+
+                // ── Step 3: Read data rows and aggregate emTransf by SKU ──
+                const result: Record<string, number> = {};
+                let processed = 0;
+
+                for (let r = dataStartRow; r <= range.e.r; r++) {
+                    const skuCell = ws[utils.encode_cell({ r, c: skuCol })];
+                    if (!skuCell || skuCell.v === undefined || skuCell.v === null) continue;
+
+                    const sku = String(skuCell.v).trim();
+                    if (!sku || sku === '0') continue;
+
+                    const nVal = entradaPendenteCol >= 0
+                        ? parseNum(ws[utils.encode_cell({ r, c: entradaPendenteCol })]?.v)
+                        : 0;
+                    const oVal = emTransferenciaCol >= 0
+                        ? parseNum(ws[utils.encode_cell({ r, c: emTransferenciaCol })]?.v)
+                        : 0;
+
+                    const sum = nVal + oVal;
+
+                    if (!result[sku]) {
+                        result[sku] = 0;
+                    }
+                    result[sku] += sum;
+                    processed++;
+                }
+
+                if (processed === 0) {
+                    return resolve({ data: {}, errors: ['Nenhum SKU encontrado no arquivo.'] });
+                }
+
+                const withTransit = Object.values(result).filter((v) => v > 0).length;
+                console.log(`[TransitoParse] Processed ${processed} rows, ${withTransit} SKUs with items in transit`);
+
+                resolve({ data: result, errors: [] });
             } catch (err: any) {
-                resolve({ data: [], errors: ["Erro ao processar o arquivo de Produtos: " + err.message] });
+                resolve({ data: {}, errors: ['Erro ao processar Excel de trânsito: ' + err.message] });
             }
         };
-        reader.onerror = () => resolve({ data: [], errors: ["Erro ao ler o arquivo de Produtos."] });
-        reader.readAsBinaryString(file);
+
+        reader.onerror = () => resolve({ data: {}, errors: ['Erro ao ler o arquivo de trânsito.'] });
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+/**
+ * Parses an Excel file for Cadastros to extract MARCA, FORNECEDOR, and TAM. CAIXA.
+ * Expected columns: SKU, MARCA, FORNECEDOR, TAM. CAIXA (or TAMANHO CAIXA, etc).
+ */
+export async function parseCadastrosExcel(
+    file: File
+): Promise<{ data: Array<{ sku: string; marca?: string; fornecedor?: string; tamanhoCaixa?: number }>; errors: string[] }> {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            try {
+                const buffer = e.target?.result as ArrayBuffer;
+                const workbook = read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+                const ws = workbook.Sheets[workbook.SheetNames[0]];
+
+                if (!ws['!ref']) {
+                    return resolve({ data: [], errors: ['Planilha vazia.'] });
+                }
+
+                const range = utils.decode_range(ws['!ref']);
+                let skuCol = -1;
+                let marcaCol = -1;
+                let fornecedorCol = -1;
+                let tamCaixaCol = -1;
+                let headerRow = -1;
+
+                // Find headers
+                const maxScanRow = Math.min(10, range.e.r);
+                for (let r = 0; r <= maxScanRow; r++) {
+                    for (let c = range.s.c; c <= range.e.c; c++) {
+                        const cell = ws[utils.encode_cell({ r, c })];
+                        if (!cell) continue;
+                        const val = norm(cell.v);
+                        if (val === 'sku') skuCol = c;
+                        else if (val === 'marca' || val === 'brand') marcaCol = c;
+                        else if (val === 'fornecedor' || val === 'industry') fornecedorCol = c;
+                        else if ((val.includes('tam') && val.includes('caixa')) || val === 'quantity_per_crate' || val === 'quantitypercrate') tamCaixaCol = c;
+                    }
+                    if (skuCol !== -1) {
+                        headerRow = r;
+                        break;
+                    }
+                }
+
+                if (skuCol === -1) {
+                    return resolve({ data: [], errors: ['Coluna "SKU" não encontrada.'] });
+                }
+
+                if (marcaCol === -1 && fornecedorCol === -1 && tamCaixaCol === -1) {
+                    return resolve({ data: [], errors: ['Nenhuma das colunas adicionais encontrada. Certifique-se de que a planilha contenha pelo menos uma destas colunas: "MARCA", "FORNECEDOR" ou "TAM. CAIXA".'] });
+                }
+
+                const result: Array<{ sku: string; marca?: string; fornecedor?: string; tamanhoCaixa?: number }> = [];
+
+                for (let r = headerRow + 1; r <= range.e.r; r++) {
+                    const skuCell = ws[utils.encode_cell({ r, c: skuCol })];
+                    if (!skuCell || skuCell.v === undefined || skuCell.v === null) continue;
+                    
+                    const sku = String(skuCell.v).trim();
+                    if (!sku || sku === '0') continue;
+
+                    const item: { sku: string; marca?: string; fornecedor?: string; tamanhoCaixa?: number } = { sku };
+
+                    if (marcaCol !== -1) {
+                        const mCell = ws[utils.encode_cell({ r, c: marcaCol })];
+                        if (mCell && mCell.v !== undefined) item.marca = String(mCell.v).trim();
+                    }
+                    if (fornecedorCol !== -1) {
+                        const fCell = ws[utils.encode_cell({ r, c: fornecedorCol })];
+                        if (fCell && fCell.v !== undefined) item.fornecedor = String(fCell.v).trim();
+                    }
+                    if (tamCaixaCol !== -1) {
+                        const tCell = ws[utils.encode_cell({ r, c: tamCaixaCol })];
+                        if (tCell && tCell.v !== undefined) item.tamanhoCaixa = parseNum(tCell.v);
+                    }
+
+                    result.push(item);
+                }
+
+                resolve({ data: result, errors: [] });
+            } catch (err: any) {
+                resolve({ data: [], errors: ['Erro ao processar Excel: ' + err.message] });
+            }
+        };
+
+        reader.onerror = () => resolve({ data: [], errors: ['Erro ao ler o arquivo.'] });
+        reader.readAsArrayBuffer(file);
     });
 }
 

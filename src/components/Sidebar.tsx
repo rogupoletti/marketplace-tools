@@ -50,6 +50,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
             section: "OPERACIONAL",
             items: [
                 { name: "Reposição Full", href: "/reposicao-full", icon: PackageSearch },
+                { name: "Cadastros", href: "/cadastros", icon: LayoutDashboard },
                 { name: "Relatórios", href: "/dash", icon: BarChart3 },
             ]
         },

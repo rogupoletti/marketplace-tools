@@ -1,149 +1,133 @@
 "use client";
 
-import React, { useCallback, useState } from 'react';
-import { UploadCloud, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import React, { useCallback, useState, useRef, useMemo } from 'react';
+import { UploadCloud, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Truck } from 'lucide-react';
 import { useReposicaoState } from '../useReposicaoState';
-import { parseProdutosExcel } from '../excel-utils';
+import { parseTransitoExcel } from '../excel-utils';
 import { useUI } from "@/lib/ui-context";
 
-interface DragDropBoxProps {
-    title: string;
-    description: string;
-    onDrop: (file: File) => void;
-    isLoading: boolean;
-    isSuccess: boolean;
-    error: string | null;
-}
-
-function DragDropBox({ title, description, onDrop, isLoading, isSuccess, error }: DragDropBoxProps) {
-    const [isDragOver, setIsDragOver] = useState(false);
-
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragOver(true);
-    }, []);
-
-    const handleDragLeave = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragOver(false);
-    }, []);
-
-    const handleDrop = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragOver(false);
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            onDrop(e.dataTransfer.files[0]);
-        }
-    }, [onDrop]);
-
-    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files.length > 0) {
-            onDrop(e.target.files[0]);
-        }
-    }, [onDrop]);
-
-    return (
-        <div
-            className={`relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-xl transition-colors
-        ${isDragOver ? 'border-[#2d3277] bg-[#2d3277]/5' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}
-        ${isSuccess && !error ? 'border-green-400 bg-green-50' : ''}
-        ${error ? 'border-red-400 bg-red-50' : ''}
-      `}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-        >
-            <input
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={handleInputChange}
-                disabled={isLoading}
-            />
-
-            <div className="flex flex-col items-center justify-center p-6 text-center pointer-events-none">
-                {isLoading ? (
-                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#2d3277] mb-3" />
-                ) : error ? (
-                    <AlertCircle className="w-10 h-10 text-red-500 mb-3" />
-                ) : isSuccess ? (
-                    <CheckCircle2 className="w-10 h-10 text-green-500 mb-3" />
-                ) : (
-                    <UploadCloud className={`w-10 h-10 mb-3 ${isDragOver ? 'text-[#2d3277]' : 'text-gray-400'}`} />
-                )}
-
-                <p className="mb-1 text-sm font-semibold text-gray-700">
-                    {title}
-                </p>
-                <p className="text-xs text-gray-500 max-w-[200px]">
-                    {error ? <span className="text-red-600 font-medium">{error}</span> : isSuccess ? <span className="text-green-600 font-medium">Arquivo carregado com sucesso</span> : description}
-                </p>
-            </div>
-        </div>
-    );
-}
-
 export function UploadSection() {
-    const { setProdutosRaw, produtosRaw, vendasRaw, fetchVendasAnymarket, isFetchingSales, isFetchingMl } = useReposicaoState();
+    const { produtosRaw, setProdutosRaw, vendasRaw, fetchVendasAnymarket, isFetchingSales, isFetchingMl } = useReposicaoState();
     const { showAlert } = useUI();
 
-    const [loadingProd, setLoadingProd] = useState(false);
-    const [errorProd, setErrorProd] = useState<string | null>(null);
-
-    const handleProdDrop = async (file: File) => {
-        setLoadingProd(true);
-        setErrorProd(null);
-        const { data, errors } = await parseProdutosExcel(file);
-
-        if (errors.length > 0) {
-            setErrorProd(errors[0]); // Show only first error
-        } else if (data.length === 0) {
-            setErrorProd("Nenhum produto válido encontrado.");
-        } else {
-            setProdutosRaw(data);
-        }
-        setLoadingProd(false);
-    };
-
-    const handleFetchAnymarket = async () => {
-        // Agora automático, mas mantemos o erro caso precise debugar
-        try {
-            await fetchVendasAnymarket();
-        } catch (error: any) {
-            console.error("Erro no auto-fetch:", error);
-        }
-    };
+    const [loadingTransito, setLoadingTransito] = useState(false);
+    const [transitoSuccess, setTransitoSuccess] = useState(false);
+    const [transitoError, setTransitoError] = useState<string | null>(null);
+    const [isDismissed, setIsDismissed] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const hasProdutos = produtosRaw.length > 0;
     const hasVendas = Object.keys(vendasRaw).length > 0;
+    const hasTransitData = useMemo(() => produtosRaw.some(p => (p.emTransf || 0) > 0), [produtosRaw]);
 
-    if (hasProdutos && hasVendas) {
-        return null; // Don't show large upload boxes if everything is loaded
+    // Hide after 3 seconds on success
+    React.useEffect(() => {
+        if (transitoSuccess) {
+            const timer = setTimeout(() => {
+                setIsDismissed(true);
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [transitoSuccess]);
+
+    const handleTransitoUpload = async (file: File) => {
+        setLoadingTransito(true);
+        setTransitoError(null);
+        setTransitoSuccess(false);
+        try {
+            const { data, errors } = await parseTransitoExcel(file);
+            if (errors.length > 0) {
+                setTransitoError(errors[0]);
+                return;
+            }
+            const skusNoArquivo = Object.keys(data);
+            if (skusNoArquivo.length === 0) {
+                setTransitoError("Nenhum dado de trânsito encontrado no arquivo.");
+                return;
+            }
+
+            // Merge emTransf into produtosRaw (ONLY emTransf is updated, nothing else)
+            const updatedProdutos = produtosRaw.map(p => {
+                const emTransf = data[p.sku];
+                if (emTransf !== undefined) {
+                    return { ...p, emTransf };
+                }
+                return p;
+            });
+            setProdutosRaw(updatedProdutos);
+
+            const totalMatched = updatedProdutos.filter(p => data[p.sku] !== undefined).length;
+            setTransitoSuccess(true);
+            showAlert("Sucesso", `Dados de trânsito importados: ${totalMatched} SKUs atualizados de ${skusNoArquivo.length} encontrados no arquivo.`, "success");
+        } catch (err: any) {
+            setTransitoError(err.message || "Erro ao processar arquivo.");
+        } finally {
+            setLoadingTransito(false);
+            // Reset file input so same file can be re-uploaded
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            handleTransitoUpload(e.target.files[0]);
+        }
+    }, [produtosRaw]);
+
+    // Don't render if dismissed or if we already have transit data (and didn't just upload it)
+    if (isDismissed || (hasTransitData && !transitoSuccess)) {
+        return null;
     }
 
     return (
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center justify-center">
+        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center justify-center animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="text-center mb-8">
                 <div className="w-16 h-16 bg-[#2d3277]/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
                     <FileSpreadsheet className="w-8 h-8 text-[#2d3277]" />
                 </div>
-                <h2 className="text-xl font-bold text-gray-900">Cadastro de Produtos</h2>
+                <h2 className="text-xl font-bold text-gray-900">Reposição Full</h2>
                 <p className="text-gray-500 mt-2 max-w-lg mx-auto">
-                    Carregue seu cadastro de produtos e estoque para iniciar o cálculo de reposição.
+                    Os produtos são carregados automaticamente da Anymarket. Importe o Excel de "Em Trânsito" para complementar os dados.
                 </p>
             </div>
 
+            {/* Importar Em Trânsito button */}
             <div className="w-full max-w-xl">
-                {!hasProdutos && (
-                    <DragDropBox
-                        title="Upload Produtos / Estoque"
-                        description="Arraste o Excel com colunas: sku, descrição, mlb, marca, fornecedor, estoque full, etc."
-                        onDrop={handleProdDrop}
-                        isLoading={loadingProd}
-                        isSuccess={hasProdutos}
-                        error={errorProd}
-                    />
-                )}
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    className="hidden"
+                    onChange={handleFileInputChange}
+                    id="transito-upload"
+                />
+                <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={loadingTransito}
+                    className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl border-2 border-dashed transition-all cursor-pointer
+                        ${transitoSuccess ? 'border-green-400 bg-green-50 text-green-700' :
+                            transitoError ? 'border-red-400 bg-red-50 text-red-700' :
+                                'border-[#2d3277]/30 bg-[#2d3277]/5 text-[#2d3277] hover:bg-[#2d3277]/10 hover:border-[#2d3277]/50'}`}
+                >
+                    {loadingTransito ? (
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current" />
+                    ) : transitoSuccess ? (
+                        <CheckCircle2 className="w-5 h-5" />
+                    ) : transitoError ? (
+                        <AlertCircle className="w-5 h-5" />
+                    ) : (
+                        <Truck className="w-5 h-5" />
+                    )}
+                    <span className="font-semibold text-sm">
+                        {loadingTransito ? 'Processando...' :
+                            transitoSuccess ? 'Arquivo importado com sucesso' :
+                                transitoError ? transitoError :
+                                    'Importar Em Trânsito (.xlsx)'}
+                    </span>
+                </button>
+                <p className="text-xs text-gray-400 text-center mt-2">
+                    Faça o download do arquivo em Anúncios &gt; Gestão de estoque Full &gt; Controle de estoque &gt; Baixar relatórios de estoque &gt; Relatório geral de estoque
+                </p>
             </div>
 
             {!hasVendas && (
@@ -158,12 +142,12 @@ export function UploadSection() {
                             {isFetchingSales ? "Sincronizando vendas..." : "Nenhum dado de venda encontrado"}
                         </h4>
                         <p className="text-xs mt-1">
-                            {isFetchingSales 
-                                ? "Buscando dados da Anymarket. Isso pode levar alguns segundos." 
+                            {isFetchingSales
+                                ? "Buscando dados da Anymarket. Isso pode levar alguns segundos."
                                 : (
                                     <>
-                                        Para calcular a reposição, precisamos dos dados de vendas. Vá em 
-                                        <a href="/integrations/anymarket" className="mx-1 font-bold underline hover:text-yellow-900">Integrações</a> 
+                                        Para calcular a reposição, precisamos dos dados de vendas. Vá em
+                                        <a href="/integrations/anymarket" className="mx-1 font-bold underline hover:text-yellow-900">Integrações</a>
                                         e faça a Carga Inicial.
                                     </>
                                 )
@@ -172,7 +156,7 @@ export function UploadSection() {
                     </div>
                 </div>
             )}
-            
+
             {isFetchingMl && (
                 <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3 text-blue-800 max-w-xl w-full">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />

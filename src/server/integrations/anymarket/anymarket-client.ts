@@ -92,4 +92,8 @@ export class AnymarketClient {
     public async fetchOrderById(id: number | string): Promise<any> {
         return this.fetchApi(`/orders/${id}`);
     }
+
+    public async fetchSkuMarketplaces(skuId: number | string): Promise<any> {
+        return this.fetchApi(`/skus/${skuId}/marketplaces`);
+    }
 }

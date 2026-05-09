@@ -11,11 +11,13 @@ import { GlobalParams } from "./components/GlobalParams";
 import { SidebarFilters } from "./components/SidebarFilters";
 import { DataTable } from "./components/DataTable";
 import { Modals } from "./components/Modals";
-import { Edit2, Download, Truck, Clock, RefreshCw } from "lucide-react";
+import { Edit2, Download, Truck, Clock, RefreshCw, UploadCloud } from "lucide-react";
+import { normalizeMlb } from "./core-logic";
 import { utils, writeFile } from 'xlsx';
+import { parseTransitoExcel } from "./excel-utils";
 
 export function ReposicaoFullContent() {
-    const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, recalcularAgora, limparDados, fetchVendasAnymarket, fetchMlInventory } = useReposicaoState();
+    const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, recalcularAgora, limparDados, limparTransito, fetchVendasAnymarket, fetchMlInventory, fetchProdutosDb, produtosRaw, setProdutosRaw } = useReposicaoState();
     const { user, loading, userData } = useAuth();
     const { showAlert, showConfirm } = useUI();
     const router = useRouter();
@@ -122,7 +124,7 @@ export function ReposicaoFullContent() {
     const handleExecuteRemessa = (type: 'full' | 'filtered') => {
         const sourceData = type === 'full' ? produtosProcessados : produtosFiltrados;
         const toShip = sourceData.filter(p => p.sugestaoReposicao > 0);
-        
+
         if (toShip.length === 0) return showAlert("Aviso", "Nenhum produto tem sugestão de reposição > 0.", "warning");
 
         const totalUnits = toShip.reduce((acc, p) => acc + p.sugestaoReposicao, 0);
@@ -144,7 +146,7 @@ export function ReposicaoFullContent() {
                 // N. do Anúncio logic: use mlbCatalogo if valid, otherwise fallback to mlb
                 const mlbCat = String(p.mlbCatalogo || "").trim();
                 const isMlbCatInvalid = !mlbCat || mlbCat.toUpperCase() === "NULL" || mlbCat.toUpperCase() === "#N/D";
-                
+
                 const mlbAnuncio = !isMlbCatInvalid ? mlbCat : p.mlb;
 
                 rows.push([
@@ -163,6 +165,46 @@ export function ReposicaoFullContent() {
             writeFile(wb, `remessa_full_${typeLabel.toLowerCase()}.xlsx`);
             showAlert("Sucesso", "Remessa gerada com sucesso!", "success");
         });
+    };
+
+    const [isUploadingTransito, setIsUploadingTransito] = useState(false);
+
+    const handleTransitoUploadHeader = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploadingTransito(true);
+        try {
+            const { data, errors } = await parseTransitoExcel(file);
+            if (errors.length > 0) {
+                showAlert("Erro", errors[0], "error");
+                return;
+            }
+
+            const skusNoArquivo = Object.keys(data);
+            if (skusNoArquivo.length === 0) {
+                showAlert("Aviso", "Nenhum dado de trânsito encontrado no arquivo.", "warning");
+                return;
+            }
+
+            // Merge emTransf into produtosRaw (only emTransf is updated, nothing else)
+            const updatedProdutos = produtosRaw.map(p => {
+                const emTransf = data[p.sku];
+                if (emTransf !== undefined) {
+                    return { ...p, emTransf };
+                }
+                return p;
+            });
+            setProdutosRaw(updatedProdutos);
+
+            const totalMatched = updatedProdutos.filter(p => data[p.sku] !== undefined).length;
+            showAlert("Sucesso", `Dados de trânsito importados: ${totalMatched} SKUs atualizados de ${skusNoArquivo.length} encontrados no arquivo.`, "success");
+        } catch (err: any) {
+            showAlert("Erro", err.message || "Erro ao processar arquivo.", "error");
+        } finally {
+            setIsUploadingTransito(false);
+            if (e.target) e.target.value = '';
+        }
     };
 
 
@@ -186,6 +228,28 @@ export function ReposicaoFullContent() {
                         <Edit2 className="w-4 h-4" />
                         Editar Selecionados {selectedSkus.length > 0 && `(${selectedSkus.length})`}
                     </button>
+
+                    <div className="relative">
+                        <input
+                            type="file"
+                            id="header-transito-upload"
+                            className="hidden"
+                            accept=".xlsx, .xls, .csv"
+                            onChange={handleTransitoUploadHeader}
+                            disabled={isUploadingTransito}
+                        />
+                        <label
+                            htmlFor="header-transito-upload"
+                            className={`flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer ${isUploadingTransito ? 'opacity-50 pointer-events-none' : ''}`}
+                        >
+                            {isUploadingTransito ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600" />
+                            ) : (
+                                <UploadCloud className="w-4 h-4" />
+                            )}
+                            Importar Trânsito
+                        </label>
+                    </div>
                     <button
                         onClick={handleExportCSV}
                         className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
@@ -241,6 +305,7 @@ export function ReposicaoFullContent() {
                         </span>
                         <button
                             onClick={() => {
+                                fetchProdutosDb();
                                 fetchVendasAnymarket();
                                 fetchMlInventory();
                                 showAlert("Sincronizando", "Buscando dados atualizados das integrações...", "info");
@@ -253,15 +318,15 @@ export function ReposicaoFullContent() {
 
                         <button
                             onClick={() => {
-                                showConfirm("Limpar Tudo", "Isso apagará todos os produtos e vendas carregados localmente. Deseja continuar?", () => {
-                                    limparDados();
-                                    showAlert("Sucesso", "Dados limpos com sucesso.", "success");
+                                showConfirm("Limpar Trânsito", "Isso apagará apenas os dados importados da planilha de 'Em Trânsito'. Deseja continuar?", () => {
+                                    limparTransito();
+                                    showAlert("Sucesso", "Dados de trânsito limpos com sucesso.", "success");
                                 });
                             }}
                             className="flex items-center gap-1.5 text-red-600 font-semibold hover:text-red-700 cursor-pointer"
                         >
                             <Clock className="w-4 h-4" />
-                            Limpar Tudo
+                            Limpar
                         </button>
                     </div>
                 </div>

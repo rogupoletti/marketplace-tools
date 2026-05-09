@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode, useRef } from "react";
 import { ProdutoRaw, VendaRaw, ParametrosGlobais, UserOverrides, Filtros, ProdutoProcessado } from "./types";
-import { processProduct, getMaxDate } from "./core-logic";
+import { processProduct, getMaxDate, normalizeMlb, parseMLBs } from "./core-logic";
 import { useAuth } from "@/lib/auth-context";
 
 interface ReposicaoContextData {
@@ -22,6 +22,7 @@ interface ReposicaoContextData {
     // Actions
     setProdutosRaw: (p: ProdutoRaw[]) => void;
     setVendasRaw: (v: Record<string, VendaRaw[]>) => void;
+    fetchProdutosDb: () => Promise<void>;
     fetchVendasAnymarket: () => Promise<void>;
     fetchMlInventory: () => Promise<void>;
     setParametros: (p: Partial<ParametrosGlobais>) => void;
@@ -30,6 +31,7 @@ interface ReposicaoContextData {
     updateOverridesBulk: (skus: string[], o: Partial<UserOverrides>) => void;
     recalcularAgora: () => void;
     limparDados: () => void;
+    limparTransito: () => void;
     selectedSkus: string[];
     setSelectedSkus: (skus: string[]) => void;
     toggleSelecionarTodos: (skus: string[]) => void;
@@ -115,13 +117,14 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         }));
     }, [produtosRaw, vendasRaw, parametros, overridesGlobais, colunasVisiveis, isLoaded]);
 
-    // Auto-fetch sales from DB when user is logged in or products are uploaded
+    // Auto-fetch data from DB when user is logged in
     useEffect(() => {
         if (user && isLoaded) {
+            fetchProdutosDb().catch(() => {});
             fetchVendasAnymarket().catch(() => {});
             fetchMlInventory().catch(() => {});
         }
-    }, [user, isLoaded, produtosRaw.length]);
+    }, [user, isLoaded]);
 
     const setProdutosRaw = (p: ProdutoRaw[]) => {
         setProdutosRawState(p);
@@ -129,6 +132,27 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
     const setVendasRaw = (v: Record<string, VendaRaw[]>) => {
         setVendasRawState(v);
+    };
+
+    const fetchProdutosDb = async () => {
+        if (!user) return;
+        try {
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/reposicao-full/products", {
+                headers: { "Authorization": `Bearer ${idToken}` }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao buscar produtos");
+
+            if (data.products && Array.isArray(data.products)) {
+                console.log(`[ReposicaoState] Loaded ${data.products.length} products from DB`);
+                setProdutosRawState(data.products);
+            } else {
+                console.warn("[ReposicaoState] API returned success but products array is missing or empty", data);
+            }
+        } catch (e) {
+            console.error("Erro ao buscar produtos do DB:", e);
+        }
     };
 
     const fetchMlInventory = async () => {
@@ -244,6 +268,11 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem("@SellerDock:ReposicaoFull");
     };
 
+    const limparTransito = () => {
+        const updated = produtosRaw.map(p => ({ ...p, emTransf: 0 }));
+        setProdutosRawState(updated);
+    };
+
     const maxSalesDate = useMemo(() => getMaxDate(vendasRaw), [vendasRaw]);
 
     // Derived Processed Data
@@ -254,23 +283,33 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             const vendas = vendasRaw[sku] || [];
             const overrides = overridesGlobais[sku] || { ativo: true };
             
-            const rawMlbs = prod.mlb ? String(prod.mlb).split(/[,\s]+/).map(id => id.trim()).filter(Boolean) : [];
+            const combinedMlbStr = `${prod.mlb || ""} ${prod.mlbCatalogo || ""}`;
+            const rawMlbs = parseMLBs(combinedMlbStr);
             
-            let totalEstoqueApi = 0;
+            let maxEstoqueApi = 0;
             let foundInApi = false;
             let matchedMlbs: string[] = [];
 
-            rawMlbs.forEach(mlb => {
-                if (mlInventory[mlb] !== undefined) {
-                    totalEstoqueApi += mlInventory[mlb];
+            rawMlbs.forEach(normalized => {
+                let stockVal = mlInventory[normalized];
+                if (stockVal === undefined) {
+                    // Try non-normalized just in case
+                    const original = combinedMlbStr.split(/[,\;\s\n]+/).find(s => normalizeMlb(s.trim()) === normalized);
+                    if (original && mlInventory[original] !== undefined) {
+                        stockVal = mlInventory[original];
+                    }
+                }
+
+                if (stockVal !== undefined) {
+                    maxEstoqueApi = Math.max(maxEstoqueApi, stockVal);
                     foundInApi = true;
-                    matchedMlbs.push(mlb);
+                    matchedMlbs.push(normalized);
                 }
             });
 
             const prodWithUpdatedStock = {
                 ...prod,
-                estoqueFull: foundInApi ? totalEstoqueApi : prod.estoqueFull 
+                estoqueFull: foundInApi ? maxEstoqueApi : prod.estoqueFull 
             };
 
             return processProduct(prodWithUpdatedStock, vendas, parametros, overrides, maxSalesDate);
@@ -372,6 +411,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
                 setProdutosRaw,
                 setVendasRaw,
+                fetchProdutosDb,
                 fetchVendasAnymarket,
                 fetchMlInventory,
                 setParametros,
@@ -380,6 +420,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 updateOverridesBulk,
                 recalcularAgora,
                 limparDados,
+                limparTransito,
                 selectedSkus,
                 setSelectedSkus: setSelectedSkusState,
                 toggleSelecionarTodos: (skus) => {

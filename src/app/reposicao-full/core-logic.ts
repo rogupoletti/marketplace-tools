@@ -44,10 +44,29 @@ export function getMaxDate(vendas: Record<string, VendaRaw[]>): Date | null {
     return maxTs > 0 ? new Date(maxTs) : null;
 }
 
+/**
+ * Normalizes an MLB string by adding the "MLB" prefix if it's missing but numeric.
+ */
+export function normalizeMlb(mlb: string): string {
+    const trimmed = String(mlb || "").trim();
+    if (!trimmed) return "";
+    // If it starts with 2-3 letters followed by numbers, it's already prefixed
+    if (/^[A-Z]{2,3}\d+/i.test(trimmed)) {
+        return trimmed.toUpperCase();
+    }
+    // If it's purely numeric and has 8-12 digits, it's likely an MLB ID missing the prefix
+    if (/^\d{8,12}$/.test(trimmed)) {
+        return `MLB${trimmed}`;
+    }
+    return trimmed.toUpperCase();
+}
+
 export function parseMLBs(mlbStr: string | number): string[] {
     if (!mlbStr) return [];
     const str = String(mlbStr);
-    return Array.from(new Set(str.split(/[,\;\s\n]+/).map(s => s.trim()).filter(Boolean)));
+    const tokens = str.split(/[,\;\s\n]+/).map(s => s.trim()).filter(Boolean);
+    const normalized = tokens.map(normalizeMlb);
+    return Array.from(new Set(normalized));
 }
 
 /**
@@ -191,7 +210,7 @@ export function processProduct(
 
     return {
         ...produto,
-        mlbs: parseMLBs(produto.mlb || produto.mlbCatalogo),
+        mlbs: parseMLBs(`${produto.mlb || ""} ${produto.mlbCatalogo || ""}`),
         vendasQtdPeriodo,
         vendasValorLiquidoPeriodo,
         vendasValorBrutoPeriodo,
