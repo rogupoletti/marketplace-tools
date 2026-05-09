@@ -10,7 +10,7 @@ export class AnymarketClient {
         this.token = token;
     }
 
-    private async fetchApi(endpoint: string, options: RequestInit = {}, retries = 3) {
+    public async fetchApi(endpoint: string, options: RequestInit = {}, retries = 3) {
         const url = `${ANYMARKET_BASE_URL}${endpoint}`;
         
         for (let i = 0; i < retries; i++) {
