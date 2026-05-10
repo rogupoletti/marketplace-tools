@@ -127,7 +127,6 @@ export function Modals({
                                 <div className="text-sm text-gray-500 mt-1">{prodToEdit.descricao}</div>
                                 <div className="flex gap-2 mt-3 text-xs text-gray-500">
                                     <span className="bg-gray-100 px-2 py-1 rounded">Marca: {prodToEdit.marca || '—'}</span>
-                                    <span className="bg-gray-100 px-2 py-1 rounded">MLB(s): {prodToEdit.mlbs.length}</span>
                                 </div>
                             </div>
 
