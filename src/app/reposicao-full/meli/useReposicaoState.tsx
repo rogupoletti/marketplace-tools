@@ -82,11 +82,12 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             if (stored) {
                 const data = JSON.parse(stored);
                 if (data.produtosRaw) setProdutosRawState(data.produtosRaw);
-                if (data.vendasRaw) setVendasRawState(data.vendasRaw);
+                // vendasRaw is no longer stored in localStorage due to size limits
                 if (data.parametros) setParametrosState(data.parametros);
                 if (data.overridesGlobais) setOverridesGlobaisState(data.overridesGlobais);
                 if (data.lastUpdate) setLastUpdate(new Date(data.lastUpdate));
                 if (data.colunasVisiveis) setColunasVisiveisState(data.colunasVisiveis);
+                console.log("[ReposicaoState] Initial state loaded from localStorage");
             }
         } catch (e) {
             console.error("Failed to load state", e);
@@ -107,14 +108,18 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
         const now = new Date();
         setLastUpdate(now);
-        localStorage.setItem("@SellerDock:ReposicaoFull", JSON.stringify({
-            produtosRaw,
-            vendasRaw,
-            parametros,
-            overridesGlobais,
-            lastUpdate: now.toISOString(),
-            colunasVisiveis,
-        }));
+        try {
+            localStorage.setItem("@SellerDock:ReposicaoFull", JSON.stringify({
+                produtosRaw,
+                // vendasRaw is excluded because it's too large for localStorage
+                parametros,
+                overridesGlobais,
+                lastUpdate: now.toISOString(),
+                colunasVisiveis,
+            }));
+        } catch (e) {
+            console.error("Failed to save state to localStorage (likely quota exceeded)", e);
+        }
     }, [produtosRaw, vendasRaw, parametros, overridesGlobais, colunasVisiveis, isLoaded]);
 
     // Auto-fetch data from DB when user is logged in

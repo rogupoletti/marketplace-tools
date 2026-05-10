@@ -171,7 +171,7 @@ export function processProduct(
     }
 
     // Cap suggestion by available local stock (estoqueEmpresa)
-    sugestaoReposicao = Math.min(sugestaoReposicao, produto.estoqueEmpresa);
+    sugestaoReposicao = Math.max(0, Math.min(sugestaoReposicao, produto.estoqueEmpresa));
 
     let status: StatusReposicao = "ATIVO / OK";
 

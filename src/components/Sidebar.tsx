@@ -30,6 +30,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
     const { userData } = useAuth();
     const [isCalculadorasOpen, setIsCalculadorasOpen] = useState(false);
     const [isIntegracoesOpen, setIsIntegracoesOpen] = useState(false);
+    const [isReposFullOpen, setIsReposFullOpen] = useState(false);
 
     const actualCollapsed = isCollapsed && !isHovered;
 
@@ -49,7 +50,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
         {
             section: "OPERACIONAL",
             items: [
-                { name: "Reposição Full", href: "/reposicao-full", icon: PackageSearch },
+                { name: "Reposição Full", icon: PackageSearch, isDropdown: true, isOpen: isReposFullOpen, toggle: () => setIsReposFullOpen(!isReposFullOpen), subItems: [ { name: "Mercado Livre", href: "/reposicao-full/meli" }, { name: "Shopee", href: "/reposicao-full/shopee" } ] },
                 { name: "Cadastros", href: "/cadastros", icon: LayoutDashboard },
                 { name: "Relatórios", href: "/dash", icon: BarChart3 },
             ]
