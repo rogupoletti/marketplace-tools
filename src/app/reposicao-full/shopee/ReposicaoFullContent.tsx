@@ -11,7 +11,7 @@ import { GlobalParams } from "./components/GlobalParams";
 import { SidebarFilters } from "./components/SidebarFilters";
 import { DataTable } from "./components/DataTable";
 import { Modals } from "./components/Modals";
-import { Edit2, Download, Truck, Clock, RefreshCw, UploadCloud } from "lucide-react";
+import { Edit2, Download, Truck, Clock, RefreshCw, UploadCloud, ChevronDown } from "lucide-react";
 import { utils, writeFile } from 'xlsx';
 import { parseTransitoExcel, parseAgendamentoExcel } from "./excel-utils";
 
@@ -25,6 +25,8 @@ export function ReposicaoFullContent() {
     const [bulkEditParams, setBulkEditParams] = useState({ isOpen: false });
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isRemessaModalOpen, setIsRemessaModalOpen] = useState(false);
+    const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+    const [isImportDropdownOpen, setIsImportDropdownOpen] = useState(false);
 
     useEffect(() => {
         if (!loading) {
@@ -242,19 +244,51 @@ export function ReposicaoFullContent() {
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Reposição Full – Shopee</h1>
                     <p className="text-gray-500 mt-1">Otimize seu estoque no Full com base no giro diário e lead time.</p>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                    <button
-                        onClick={() => {
-                            if (selectedSkus.length === 0) return showAlert("Aviso", "Selecione pelo menos um produto na tabela.", "warning");
-                            setBulkEditParams({ isOpen: true });
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
-                    >
-                        <Edit2 className="w-4 h-4" />
-                        Editar Selecionados {selectedSkus.length > 0 && `(${selectedSkus.length})`}
-                    </button>
+                <div className="flex flex-wrap gap-3 items-center">
+                    {selectedSkus.length > 0 && (
+                        <button
+                            onClick={() => setBulkEditParams({ isOpen: true })}
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                            Editar {`(${selectedSkus.length})`}
+                        </button>
+                    )}
 
                     <div className="relative">
+                        <button
+                            onClick={() => setIsImportDropdownOpen(!isImportDropdownOpen)}
+                            onBlur={() => setTimeout(() => setIsImportDropdownOpen(false), 200)}
+                            className={`flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer ${isUploadingTransito || isUploadingAgendamento ? 'opacity-50 pointer-events-none' : ''}`}
+                        >
+                            {(isUploadingTransito || isUploadingAgendamento) ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600" />
+                            ) : (
+                                <UploadCloud className="w-4 h-4" />
+                            )}
+                            Importar
+                            <ChevronDown className={`w-4 h-4 transition-transform ${isImportDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isImportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+                                <button
+                                    onClick={() => document.getElementById('header-transito-upload')?.click()}
+                                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                                >
+                                    <UploadCloud className="w-4 h-4" />
+                                    Estoque Shopee
+                                </button>
+                                <button
+                                    onClick={() => document.getElementById('header-agendamento-upload')?.click()}
+                                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                    <UploadCloud className="w-4 h-4 text-orange-600" />
+                                    Agendamento Full
+                                </button>
+                            </div>
+                        )}
+
                         <input
                             type="file"
                             id="header-transito-upload"
@@ -263,20 +297,6 @@ export function ReposicaoFullContent() {
                             onChange={handleTransitoUploadHeader}
                             disabled={isUploadingTransito}
                         />
-                        <label
-                            htmlFor="header-transito-upload"
-                            className={`flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer ${isUploadingTransito ? 'opacity-50 pointer-events-none' : ''}`}
-                        >
-                            {isUploadingTransito ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600" />
-                            ) : (
-                                <UploadCloud className="w-4 h-4" />
-                            )}
-                            Importar Estoque Shopee
-                        </label>
-                    </div>
-
-                    <div className="relative">
                         <input
                             type="file"
                             id="header-agendamento-upload"
@@ -285,32 +305,38 @@ export function ReposicaoFullContent() {
                             onChange={handleAgendamentoUpload}
                             disabled={isUploadingAgendamento}
                         />
-                        <label
-                            htmlFor="header-agendamento-upload"
-                            className={`flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer ${isUploadingAgendamento ? 'opacity-50 pointer-events-none' : ''}`}
-                        >
-                            {isUploadingAgendamento ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600" />
-                            ) : (
-                                <UploadCloud className="w-4 h-4 text-orange-600" />
-                            )}
-                            Importar Agendamento Full
-                        </label>
                     </div>
-                    <button
-                        onClick={handleExportCSV}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
-                    >
-                        <Download className="w-4 h-4" />
-                        Exportar
-                    </button>
-                    <button
-                        onClick={handleCriarRemessa}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#2d3277] text-white rounded-lg text-sm font-medium hover:bg-[#2d3277]/90 shadow-sm transition-colors cursor-pointer"
-                    >
-                        <Truck className="w-4 h-4" />
-                        Criar Remessa
-                    </button>
+
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            onBlur={() => setTimeout(() => setIsExportDropdownOpen(false), 200)}
+                            className="flex items-center gap-2 px-4 py-2 bg-[#2d3277] text-white rounded-lg text-sm font-medium hover:bg-[#2d3277]/90 shadow-sm transition-colors cursor-pointer"
+                        >
+                            <Download className="w-4 h-4" />
+                            Exportar
+                            <ChevronDown className={`w-4 h-4 transition-transform ${isExportDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isExportDropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
+                                <button
+                                    onClick={() => handleExportCSV()}
+                                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Exportar Excel
+                                </button>
+                                <button
+                                    onClick={() => handleCriarRemessa()}
+                                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                    <Truck className="w-4 h-4" />
+                                    Criar Remessa
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
