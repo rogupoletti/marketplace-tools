@@ -6,38 +6,40 @@ export async function runFrequentSync() {
     console.log("[Anymarket Frequent Sync] Iniciando processamento de estoque...");
     
     try {
-        // Busca todas as integrações anymarket ativas no sistema
-        const snapshot = await adminDb.collectionGroup("integrations")
-            .where("enabled", "==", true)
-            .get();
+        // Busca todas as contas e confere a integração anymarket sem depender de índice collectionGroup
+        const accountsSnapshot = await adminDb.collection("accounts").get();
+        const activeAccounts = [];
 
-        if (snapshot.empty) {
+        for (const accountDoc of accountsSnapshot.docs) {
+            const integrationDoc = await accountDoc.ref.collection("integrations").doc("anymarket").get();
+            const integration = integrationDoc.data();
+            if (integrationDoc.exists && integration?.enabled) {
+                activeAccounts.push(accountDoc.id);
+            }
+        }
+
+        if (activeAccounts.length === 0) {
             console.log("[Anymarket Frequent Sync] Nenhuma conta ativa encontrada.");
             return { processed: 0 };
         }
 
-        console.log(`[Anymarket Frequent Sync] Encontradas ${snapshot.size} contas para sincronizar estoque.`);
+        console.log(`[Anymarket Frequent Sync] Encontradas ${activeAccounts.length} contas para sincronizar estoque.`);
 
         const results = [];
-        for (const doc of snapshot.docs) {
-            // O caminho é accounts/{accountId}/integrations/anymarket
-            const accountId = doc.ref.parent.parent?.id;
-            
-            if (accountId) {
-                try {
-                    console.log(`[Anymarket Frequent Sync] Sincronizando estoque da conta: ${accountId}...`);
-                    await syncStock(accountId);
-                    results.push({ accountId, status: "success" });
-                } catch (err: any) {
-                    console.error(`[Anymarket Frequent Sync] Erro na conta ${accountId}:`, err.message);
-                    results.push({ accountId, status: "error", error: err.message });
-                }
+        for (const accountId of activeAccounts) {
+            try {
+                console.log(`[Anymarket Frequent Sync] Sincronizando estoque da conta: ${accountId}...`);
+                await syncStock(accountId);
+                results.push({ accountId, status: "success" });
+            } catch (err: any) {
+                console.error(`[Anymarket Frequent Sync] Erro na conta ${accountId}:`, err.message);
+                results.push({ accountId, status: "error", error: err.message });
             }
         }
 
         console.log("[Anymarket Frequent Sync] Processamento concluído.");
         return { 
-            total: snapshot.size,
+            total: activeAccounts.length,
             processed: results.length,
             results 
         };

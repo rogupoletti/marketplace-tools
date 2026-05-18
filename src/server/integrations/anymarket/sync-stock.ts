@@ -28,8 +28,9 @@ export async function syncStock(accountId: string) {
     if (items.length < limit) more = false; else offset += limit;
   }
 
-  const batch = adminDb.batch();
+  let batch = adminDb.batch();
   const prodCol = adminDb.collection("accounts").doc(accountId).collection("products");
+  let pendingWrites = 0;
   for (const skuObj of allSKUs) {
     // In /skus endpoint, partnerId is usually at the top level
     const sku = String(skuObj.partnerId || skuObj.sku?.partnerId || skuObj.sku?.code || skuObj.id).trim();
@@ -37,8 +38,17 @@ export async function syncStock(accountId: string) {
     const amount = Number(skuObj.amount ?? 0);
     const docRef = prodCol.doc(sku);
     batch.set(docRef, { estoqueEmpresa: amount }, { merge: true });
+    pendingWrites++;
+
+    if (pendingWrites >= 400) {
+      await batch.commit();
+      batch = adminDb.batch();
+      pendingWrites = 0;
+    }
   }
 
-  await batch.commit();
+  if (pendingWrites > 0) {
+    await batch.commit();
+  }
   console.log(`[syncStock] Updated estoqueEmpresa for ${allSKUs.length} SKUs (account ${accountId})`);
 }
