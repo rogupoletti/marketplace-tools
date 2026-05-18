@@ -9,6 +9,10 @@ export interface AnymarketIntegrationStatus {
     lastSuccessfulSyncAt: string | null;
     lastSyncStatus: 'none' | 'running' | 'success' | 'error';
     lastSyncError: string | null;
+    stockLastSyncAt?: string | null;
+    stockLastSyncStatus?: 'none' | 'running' | 'success' | 'error';
+    stockLastSyncError?: string | null;
+    stockLastSyncSkuCount?: number;
     syncProgress: number;
     syncOffset: number;
     totalOrders: number;

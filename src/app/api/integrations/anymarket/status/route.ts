@@ -49,13 +49,18 @@ export async function GET(request: NextRequest) {
             lastSuccessfulSyncAt: data?.lastSuccessfulSyncAt || null,
             lastSyncStatus: data?.lastSyncStatus || 'none',
             lastSyncError: data?.lastSyncError || null,
+            stockLastSyncAt: data?.stockLastSyncAt || null,
+            stockLastSyncStatus: data?.stockLastSyncStatus || 'none',
+            stockLastSyncError: data?.stockLastSyncError || null,
+            stockLastSyncSkuCount: data?.stockLastSyncSkuCount || 0,
             syncProgress: data?.syncProgress || 0,
             syncOffset: data?.syncOffset || 0,
             totalOrders: data?.totalOrders || 0
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("CRITICAL ERROR in Anymarket Status API:", error);
-        return NextResponse.json({ error: error.message || "Erro interno" }, { status: 500 });
+        const message = error instanceof Error ? error.message : "Erro interno";
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
