@@ -39,6 +39,15 @@ interface ReposicaoContextData {
     setColunasVisiveis: (cols: string[]) => void;
 }
 
+interface SaleApiItem {
+    marketplace?: string;
+    sku?: string;
+    date?: string;
+    vendaQtd?: number;
+    vendaValorLiquido?: number;
+    vendaValorBruto?: number;
+}
+
 const ReposicaoContext = createContext<ReposicaoContextData>({} as ReposicaoContextData);
 
 const DEFAULT_PARAMS: ParametrosGlobais = {
@@ -58,6 +67,55 @@ const DEFAULT_FILTROS: Filtros = {
     reposicaoMin: null,
 };
 
+const DEFAULT_VISIBLE_COLUMNS = [
+    'sku', 'curvaABC', 'curvaABCFornecedor', 'ean', 'mlbs', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao'
+];
+
+const ALLOWED_VISIBLE_COLUMNS = new Set([
+    'sku',
+    'descricao',
+    'ean',
+    'curvaABC',
+    'curvaABCFornecedor',
+    'mlbs',
+    'mlbCatalogo',
+    'estoqueFull',
+    'status',
+    'diasInativos',
+    'giroDiarioQtd',
+    'vendasQtdPeriodo',
+    'vendasValorLiquidoPeriodo',
+    'vendasValorBrutoPeriodo',
+    'vendaPerdidaLiquida',
+    'vendaPerdidaBruta',
+    'diasEstoqueFull',
+    'diasEstoqueTotal',
+    'emTransf',
+    'tamanhoCaixa',
+    'numCaixas',
+    'sugestaoReposicao',
+    'necessidade',
+    'asp',
+    'markup',
+]);
+
+function sanitizeVisibleColumns(cols: unknown): string[] {
+    if (!Array.isArray(cols)) return DEFAULT_VISIBLE_COLUMNS;
+
+    const sanitized = cols.filter((col): col is string => (
+        typeof col === "string" && ALLOWED_VISIBLE_COLUMNS.has(col)
+    ));
+
+    if (sanitized.length === 0) return DEFAULT_VISIBLE_COLUMNS;
+
+    if (!sanitized.includes("ean")) {
+        const insertAfter = sanitized.indexOf("curvaABCFornecedor");
+        sanitized.splice(insertAfter >= 0 ? insertAfter + 1 : 1, 0, "ean");
+    }
+
+    return sanitized;
+}
+
 export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const { user } = useAuth();
     const [isLoaded, setIsLoaded] = useState(false);
@@ -68,9 +126,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const [filtros, setFiltrosState] = useState<Filtros>(DEFAULT_FILTROS);
     const [selectedSkus, setSelectedSkusState] = useState<string[]>([]);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-    const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>([
-        'sku', 'curvaABC', 'curvaABCFornecedor', 'mlbs', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao'
-    ]);
+    const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [mlInventory, setMlInventory] = useState<Record<string, number>>({});
     const [isFetchingMl, setIsFetchingMl] = useState(false);
     const [isFetchingSales, setIsFetchingSales] = useState(false);
@@ -86,7 +142,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 if (data.parametros) setParametrosState(data.parametros);
                 if (data.overridesGlobais) setOverridesGlobaisState(data.overridesGlobais);
                 if (data.lastUpdate) setLastUpdate(new Date(data.lastUpdate));
-                if (data.colunasVisiveis) setColunasVisiveisState(data.colunasVisiveis);
+                if (data.colunasVisiveis) setColunasVisiveisState(sanitizeVisibleColumns(data.colunasVisiveis));
                 console.log("[ReposicaoState] Initial state loaded from localStorage");
             }
         } catch (e) {
@@ -115,7 +171,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 parametros,
                 overridesGlobais,
                 lastUpdate: now.toISOString(),
-                colunasVisiveis,
+                colunasVisiveis: sanitizeVisibleColumns(colunasVisiveis),
             }));
         } catch (e) {
             console.error("Failed to save state to localStorage (likely quota exceeded)", e);
@@ -194,9 +250,9 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             if (!res.ok) throw new Error(data.error || "Erro ao buscar vendas");
 
             const novasVendas: Record<string, VendaRaw[]> = {};
-            const sales = data.sales || [];
+            const sales = (data.sales || []) as SaleApiItem[];
             
-            sales.forEach((sale: any) => {
+            sales.forEach((sale) => {
                 // User feedback: check specifically for "MERCADO_LIVRE"
                 const marketplace = (sale.marketplace || "").toUpperCase();
                 const isMeli = marketplace === "MERCADO_LIVRE";
@@ -210,8 +266,8 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 }
                 
                 novasVendas[sku].push({
-                    sku: sale.sku,
-                    data: sale.date,
+                    sku,
+                    data: sale.date || "",
                     vendaQtd: sale.vendaQtd || 0,
                     vendaValorLiquido: sale.vendaValorLiquido || 0,
                     vendaValorBruto: sale.vendaValorBruto || 0,
@@ -293,8 +349,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             
             let maxEstoqueApi = 0;
             let foundInApi = false;
-            let matchedMlbs: string[] = [];
-
             rawMlbs.forEach(normalized => {
                 let stockVal = mlInventory[normalized];
                 if (stockVal === undefined) {
@@ -308,7 +362,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 if (stockVal !== undefined) {
                     maxEstoqueApi = Math.max(maxEstoqueApi, stockVal);
                     foundInApi = true;
-                    matchedMlbs.push(normalized);
                 }
             });
 
@@ -381,9 +434,10 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             if (filtros.busca) {
                 const query = filtros.busca.toLowerCase();
                 const matchesSku = item.sku.toLowerCase().includes(query);
+                const matchesEan = (item.ean || "").toLowerCase().includes(query);
                 const matchesDesc = item.descricao.toLowerCase().includes(query);
                 const matchesMlb = item.mlbs.some(mlb => mlb.toLowerCase().includes(query));
-                if (!matchesSku && !matchesDesc && !matchesMlb) return false;
+                if (!matchesSku && !matchesEan && !matchesDesc && !matchesMlb) return false;
             }
             if (filtros.status.length > 0) {
                 if (!filtros.status.includes(item.status)) return false;
@@ -437,7 +491,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 },
                 colunasVisiveis,
                 setColunasVisiveis: (cols: string[]) => {
-                    setColunasVisiveisState(cols);
+                    setColunasVisiveisState(sanitizeVisibleColumns(cols));
                 }
             }}
         >

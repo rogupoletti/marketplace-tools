@@ -7,17 +7,15 @@ import { useUI } from "@/lib/ui-context";
 import { useReposicaoState } from "./useReposicaoState";
 import { UploadSection } from "./components/UploadSection";
 import { SummaryCards } from "./components/SummaryCards";
-import { GlobalParams } from "./components/GlobalParams";
-import { SidebarFilters } from "./components/SidebarFilters";
 import { DataTable } from "./components/DataTable";
 import { Modals } from "./components/Modals";
 import { Edit2, Download, Truck, Clock, RefreshCw, UploadCloud, ChevronDown } from "lucide-react";
-import { normalizeMlb } from "./core-logic";
+import { parseMLBs } from "./core-logic";
 import { utils, writeFile } from 'xlsx';
 import { parseTransitoExcel } from "./excel-utils";
 
 export function ReposicaoFullContent() {
-    const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, recalcularAgora, limparDados, limparTransito, fetchVendasAnymarket, fetchMlInventory, fetchProdutosDb, produtosRaw, setProdutosRaw } = useReposicaoState();
+    const { produtosProcessados, produtosFiltrados, selectedSkus, parametros, lastUpdate, limparTransito, fetchVendasAnymarket, fetchMlInventory, fetchProdutosDb, produtosRaw, setProdutosRaw } = useReposicaoState();
     const { user, loading, userData } = useAuth();
     const { showAlert, showConfirm } = useUI();
     const router = useRouter();
@@ -27,6 +25,7 @@ export function ReposicaoFullContent() {
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isRemessaModalOpen, setIsRemessaModalOpen] = useState(false);
     const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+    const [isUploadingTransito, setIsUploadingTransito] = useState(false);
 
     useEffect(() => {
         if (!loading) {
@@ -63,16 +62,28 @@ export function ReposicaoFullContent() {
         );
     }
 
-    const getFilteredDataForExport = () => {
-        // If there are selections, export only selections. Otherwise, export filtered data.
-        if (selectedSkus.length > 0) {
-            return produtosProcessados.filter(p => selectedSkus.includes(p.sku));
-        }
-        return produtosFiltrados;
-    };
-
     const handleExportCSV = () => {
         setIsExportModalOpen(true);
+    };
+
+    const formatExcelDecimal = (value: number, decimals: number) => {
+        return value.toFixed(decimals).replace(".", ",");
+    };
+
+    const isInvalidMlb = (value: string) => {
+        const normalized = value.trim().toUpperCase();
+        return !normalized || normalized === "NULL" || normalized === "#N/D";
+    };
+
+    const getNormalMlbs = (mlb: string) => {
+        return parseMLBs(mlb).filter((value) => !isInvalidMlb(value));
+    };
+
+    const getPreferredRemessaMlb = (mlbCatalogo: string, mlb: string) => {
+        const catalogMlb = parseMLBs(mlbCatalogo).find((value) => !isInvalidMlb(value));
+        if (catalogMlb) return catalogMlb;
+
+        return getNormalMlbs(mlb)[0] || "";
     };
 
     const handleExecuteExport = (type: 'full' | 'filtered') => {
@@ -83,32 +94,33 @@ export function ReposicaoFullContent() {
             "Curva ABC": p.curvaABC || "Z",
             "ABC Ind.": p.curvaABCFornecedor || "Z",
             "SKU": p.sku,
+            "EAN": p.ean || "",
             "Descrição": p.descricao,
-            "MLB(s)": p.mlbs.join(", "),
+            "MLB(s)": getNormalMlbs(p.mlb).join(", "),
             "Marca": p.marca,
             "Fornecedor": p.fornecedor,
             "Estoque Full": p.estoqueFull,
             "Estoque Empresa": p.estoqueEmpresa,
-            "Giro Diário Qtd": p.giroDiarioQtd.toFixed(2),
-            "Giro Diário Valor (Liq)": p.giroDiarioValorLiquido.toFixed(2),
-            "Giro Diário Valor (Bruto)": p.giroDiarioValorBruto.toFixed(2),
+            "Giro Diário Qtd": formatExcelDecimal(p.giroDiarioQtd, 2),
+            "Giro Diário Valor (Liq)": formatExcelDecimal(p.giroDiarioValorLiquido, 2),
+            "Giro Diário Valor (Bruto)": formatExcelDecimal(p.giroDiarioValorBruto, 2),
             "Vendas Qtd": p.vendasQtdPeriodo,
-            "Vendas Valor Liquido": p.vendasValorLiquidoPeriodo.toFixed(2),
-            "Vendas Valor Bruto": p.vendasValorBrutoPeriodo.toFixed(2),
+            "Vendas Valor Liquido": formatExcelDecimal(p.vendasValorLiquidoPeriodo, 2),
+            "Vendas Valor Bruto": formatExcelDecimal(p.vendasValorBrutoPeriodo, 2),
             "Dias Inativos": p.diasInativos,
-            "Venda Perdida (Liq)": p.vendaPerdidaLiquida.toFixed(2),
-            "Venda Perdida (Bruta)": p.vendaPerdidaBruta.toFixed(2),
+            "Venda Perdida (Liq)": formatExcelDecimal(p.vendaPerdidaLiquida, 2),
+            "Venda Perdida (Bruta)": formatExcelDecimal(p.vendaPerdidaBruta, 2),
             "Em Transferência": p.emTransf,
             "Tamanho da Caixa": p.tamanhoCaixa,
-            "Nº Caixas": p.numCaixas,
-            "Dias Estoque Full": p.diasEstoqueFull > 0 ? p.diasEstoqueFull.toFixed(1) : "—",
-            "Dias Estoque Total": p.diasEstoqueTotal > 0 ? p.diasEstoqueTotal.toFixed(1) : "—",
+            "Nº Caixas": formatExcelDecimal(p.numCaixas, 2),
+            "Dias Estoque Full": p.diasEstoqueFull > 0 ? formatExcelDecimal(p.diasEstoqueFull, 1) : 0,
+            "Dias Estoque Total": p.diasEstoqueTotal > 0 ? formatExcelDecimal(p.diasEstoqueTotal, 1) : 0,
             "MLB Catálogo": p.mlbCatalogo || "",
             "Dias Desejado (Total)": p.diasDesejadoItem + (parametros?.leadTime || 7),
             "Sugestão Reposição": p.sugestaoReposicao,
             "Necessidade": p.necessidade,
-            "ASP": p.asp.toFixed(2),
-            "Mark up": p.markup.toFixed(2),
+            "ASP": formatExcelDecimal(p.asp, 2),
+            "Mark up": formatExcelDecimal(p.markup, 2),
             "Status": p.status
         }));
 
@@ -133,7 +145,7 @@ export function ReposicaoFullContent() {
 
         showConfirm("Criar Remessa", `Criar remessa ${typeLabel} para ${toShip.length} SKUs totalizando ${totalUnits} unidades?`, () => {
             // Header Row
-            const rows: any[][] = [
+            const rows: Array<Array<string | number>> = [
                 ["SKU", "Cód Universal", "Código ML", "N. do Anúncio", "N. da Variação", "Qtd de unidades"]
             ];
 
@@ -144,11 +156,8 @@ export function ReposicaoFullContent() {
 
             // Data starting from row 6
             toShip.forEach(p => {
-                // N. do Anúncio logic: use mlbCatalogo if valid, otherwise fallback to mlb
-                const mlbCat = String(p.mlbCatalogo || "").trim();
-                const isMlbCatInvalid = !mlbCat || mlbCat.toUpperCase() === "NULL" || mlbCat.toUpperCase() === "#N/D";
-
-                const mlbAnuncio = !isMlbCatInvalid ? mlbCat : p.mlb;
+                // Use a single listing code: catalog first, then first regular MLB.
+                const mlbAnuncio = getPreferredRemessaMlb(p.mlbCatalogo, p.mlb);
 
                 rows.push([
                     p.sku,
@@ -167,8 +176,6 @@ export function ReposicaoFullContent() {
             showAlert("Sucesso", "Remessa gerada com sucesso!", "success");
         });
     };
-
-    const [isUploadingTransito, setIsUploadingTransito] = useState(false);
 
     const handleTransitoUploadHeader = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -200,8 +207,8 @@ export function ReposicaoFullContent() {
 
             const totalMatched = updatedProdutos.filter(p => data[p.sku] !== undefined).length;
             showAlert("Sucesso", `Dados de trânsito importados: ${totalMatched} SKUs atualizados de ${skusNoArquivo.length} encontrados no arquivo.`, "success");
-        } catch (err: any) {
-            showAlert("Erro", err.message || "Erro ao processar arquivo.", "error");
+        } catch (err: unknown) {
+            showAlert("Erro", err instanceof Error ? err.message : "Erro ao processar arquivo.", "error");
         } finally {
             setIsUploadingTransito(false);
             if (e.target) e.target.value = '';

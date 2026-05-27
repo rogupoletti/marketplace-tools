@@ -30,6 +30,7 @@ function StatusBadge({ status }: { status: StatusReposicao }) {
 const COLUMN_LABELS: Record<string, string> = {
     curvaABC: "Curva ABC",
     curvaABCFornecedor: "ABC Ind.",
+    ean: "EAN",
     shopeeItemId: "Item ID",
     shopeeModelId: "Model ID",
     estoqueFull: "Full / Empresa",
@@ -147,7 +148,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
     };
 
     const resetColumns = () => {
-        setColunasVisiveis(['sku', 'curvaABC', 'curvaABCFornecedor', 'shopeeItemId', 'estoqueFull', 'emTransf', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'qtdeMaxPermitida', 'sugestaoReposicao']);
+        setColunasVisiveis(['sku', 'curvaABC', 'curvaABCFornecedor', 'ean', 'shopeeItemId', 'estoqueFull', 'emTransf', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'qtdeMaxPermitida', 'sugestaoReposicao']);
     };
 
     const formatCurrency = (val: number) => {
@@ -511,6 +512,8 @@ function renderCell(
             return <span className="text-[11px] font-medium text-gray-600">{item.shopeeItemId || '—'}</span>;
         case 'shopeeModelId':
             return <span className="text-[11px] font-medium text-gray-600">{item.shopeeModelId || '—'}</span>;
+        case 'ean':
+            return <span className="text-[11px] font-mono text-gray-600">{item.ean || '—'}</span>;
         case 'estoqueFull':
             return (
                 <div className="flex items-center justify-center gap-1.5">

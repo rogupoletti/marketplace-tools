@@ -1,5 +1,6 @@
 export interface ProdutoRaw {
     sku: string;
+    ean?: string;
     descricao: string;
     shopeeItemId?: string;
     shopeeModelId?: string;

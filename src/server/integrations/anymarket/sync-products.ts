@@ -4,6 +4,44 @@ import { AnymarketClient } from "./anymarket-client";
 import { decryptToken } from "../../utils/crypto";
 import { AnymarketIntegrationStatus, AnymarketOrder, AnymarketOrderPage } from "./anymarket-types";
 
+type AnymarketRecord = Record<string, unknown>;
+
+function normalizeEanCandidate(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    const record = value as AnymarketRecord;
+    return String(record.ean || record.code || record.value || record.gtin || "").trim();
+  }
+  return String(value).trim();
+}
+
+function extractEan(product: AnymarketRecord, sku: AnymarketRecord): string {
+  const candidates = [
+    sku?.ean,
+    sku?.eanCode,
+    sku?.gtin,
+    sku?.barcode,
+    sku?.barCode,
+    sku?.codeEan,
+    product?.ean,
+    product?.eanCode,
+    product?.gtin,
+    product?.barcode,
+    product?.barCode,
+  ];
+
+  const arrayCandidate = [sku?.eans, sku?.barcodes, product?.eans, product?.barcodes]
+    .find((value): value is unknown[] => Array.isArray(value) && value.length > 0);
+
+  if (arrayCandidate) candidates.push(arrayCandidate[0]);
+
+  const ean = candidates
+    .map(normalizeEanCandidate)
+    .find((value) => value && value.toUpperCase() !== "NULL" && value !== "0");
+
+  return ean || "";
+}
+
 /**
  * Sync products (sku, descricao, mlb, mlbCatalogo) once per day.
  * Preserves manual fields (fornecedor, tamanhoCaixa, etc.) already stored.
@@ -104,6 +142,8 @@ export async function syncProducts(accountId: string) {
   let batch = adminDb.batch();
   let count = 0;
 
+  const extractedAt = new Date().toISOString();
+
   for (const p of products) {
     const skus = p.skus || [];
     for (const s of skus) {
@@ -114,8 +154,9 @@ export async function syncProducts(accountId: string) {
       
       const updateData: any = {
         sku,
+        ean: extractEan(p, s),
         descricao: p.title || "",
-        updatedAt: new Date().toISOString()
+        updatedAt: extractedAt
       };
 
       // Update mapping if found

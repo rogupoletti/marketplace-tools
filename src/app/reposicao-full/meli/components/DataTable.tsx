@@ -3,7 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { useReposicaoState } from '../useReposicaoState';
 import { Edit2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Settings, Check, RotateCcw, GripVertical, FilterX, Layout } from 'lucide-react';
-import { ProdutoProcessado, StatusReposicao } from '../types';
+import { ParametrosGlobais, ProdutoProcessado, StatusReposicao } from '../types';
+import { parseMLBs } from '../core-logic';
 
 import { SidebarFilters } from './SidebarFilters';
 import { GlobalParams } from './GlobalParams';
@@ -30,6 +31,7 @@ function StatusBadge({ status }: { status: StatusReposicao }) {
 const COLUMN_LABELS: Record<string, string> = {
     curvaABC: "Curva ABC",
     curvaABCFornecedor: "ABC Ind.",
+    ean: "EAN",
     mlbs: "MLB(s)",
     mlbCatalogo: "MLB Catálogo",
     estoqueFull: "Full / Empresa",
@@ -51,6 +53,13 @@ const COLUMN_LABELS: Record<string, string> = {
     asp: "ASP (R$)",
     markup: "Mark up",
 };
+
+function getNormalMlbs(mlb: string) {
+    return parseMLBs(mlb).filter((value) => {
+        const normalized = value.trim().toUpperCase();
+        return normalized && normalized !== "NULL" && normalized !== "#N/D";
+    });
+}
 
 export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void }) {
     const { 
@@ -80,14 +89,17 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
     };
 
     const sortedData = useMemo(() => {
-        let sortableItems = [...filteredData];
+        const sortableItems = [...filteredData];
         if (sortConfig.key !== '') {
             sortableItems.sort((a, b) => {
-                let aVal = a[sortConfig.key as keyof ProdutoProcessado] as any;
-                let bVal = b[sortConfig.key as keyof ProdutoProcessado] as any;
+                let aVal = a[sortConfig.key as keyof ProdutoProcessado] as string | number | boolean | string[] | undefined | null;
+                let bVal = b[sortConfig.key as keyof ProdutoProcessado] as string | number | boolean | string[] | undefined | null;
 
                 if (aVal === undefined || aVal === null) aVal = '';
                 if (bVal === undefined || bVal === null) bVal = '';
+
+                if (Array.isArray(aVal)) aVal = aVal.join(", ");
+                if (Array.isArray(bVal)) bVal = bVal.join(", ");
 
                 if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
@@ -146,7 +158,7 @@ export function DataTable({ onEditItem }: { onEditItem: (sku: string) => void })
     };
 
     const resetColumns = () => {
-        setColunasVisiveis(['sku', 'curvaABC', 'curvaABCFornecedor', 'mlbs', 'estoqueFull', 'emTransf', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao']);
+        setColunasVisiveis(['sku', 'curvaABC', 'curvaABCFornecedor', 'ean', 'mlbs', 'estoqueFull', 'emTransf', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'sugestaoReposicao']);
     };
 
     const formatCurrency = (val: number) => {
@@ -486,7 +498,7 @@ function renderCell(
     item: ProdutoProcessado, 
     formatCurrency: (v: number) => string, 
     formatNumber: (v: number, dec?: number) => string,
-    parametros: any
+    parametros: ParametrosGlobais
 ) {
     switch (colId) {
         case 'curvaABC':
@@ -506,17 +518,22 @@ function renderCell(
                 </div>
             );
         }
-        case 'mlbs':
+        case 'mlbs': {
+            const normalMlbs = getNormalMlbs(item.mlb);
             return (
                 <div className="flex flex-wrap justify-center gap-1 max-w-[120px]">
-                    {item.mlbs.slice(0, 2).map(m => (
+                    {normalMlbs.slice(0, 2).map(m => (
                         <span key={m} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[9px] font-bold border border-gray-200">{m}</span>
                     ))}
-                    {item.mlbs.length > 2 && <span className="text-[9px] text-gray-400 font-bold pt-1">+{item.mlbs.length - 2}</span>}
+                    {normalMlbs.length === 0 && <span className="text-gray-400 text-xs">â€”</span>}
+                    {normalMlbs.length > 2 && <span className="text-[9px] text-gray-400 font-bold pt-1">+{normalMlbs.length - 2}</span>}
                 </div>
             );
+        }
         case 'mlbCatalogo':
             return <span className="text-[11px] font-medium text-gray-600">{item.mlbCatalogo || '—'}</span>;
+        case 'ean':
+            return <span className="text-[11px] font-mono text-gray-600">{item.ean || '—'}</span>;
         case 'estoqueFull':
             return (
                 <div className="flex items-center justify-center gap-1.5">

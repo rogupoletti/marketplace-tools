@@ -75,6 +75,10 @@ export function ReposicaoFullContent() {
         setIsExportModalOpen(true);
     };
 
+    const formatExcelDecimal = (value: number, decimals: number) => {
+        return value.toFixed(decimals).replace(".", ",");
+    };
+
     const handleExecuteExport = (type: 'full' | 'filtered') => {
         const data = type === 'full' ? produtosProcessados : produtosFiltrados;
         if (data.length === 0) return showAlert("Aviso", "Nenhum dado para exportar.", "warning");
@@ -84,32 +88,33 @@ export function ReposicaoFullContent() {
             "ABC Ind.": p.curvaABCFornecedor || "Z",
             "SKU": p.sku,
             "Descrição": p.descricao,
+            "EAN": p.ean || "",
             "Shopee Item ID": p.shopeeItemId || "",
             "Shopee Model ID": p.shopeeModelId || "",
             "Marca": p.marca,
             "Fornecedor": p.fornecedor,
             "Estoque Full": p.estoqueFull,
             "Estoque Empresa": p.estoqueEmpresa,
-            "Giro Diário Qtd": p.giroDiarioQtd.toFixed(2),
-            "Giro Diário Valor (Liq)": p.giroDiarioValorLiquido.toFixed(2),
-            "Giro Diário Valor (Bruto)": p.giroDiarioValorBruto.toFixed(2),
+            "Giro Diário Qtd": formatExcelDecimal(p.giroDiarioQtd, 2),
+            "Giro Diário Valor (Liq)": formatExcelDecimal(p.giroDiarioValorLiquido, 2),
+            "Giro Diário Valor (Bruto)": formatExcelDecimal(p.giroDiarioValorBruto, 2),
             "Vendas Qtd": p.vendasQtdPeriodo,
-            "Vendas Valor Liquido": p.vendasValorLiquidoPeriodo.toFixed(2),
-            "Vendas Valor Bruto": p.vendasValorBrutoPeriodo.toFixed(2),
+            "Vendas Valor Liquido": formatExcelDecimal(p.vendasValorLiquidoPeriodo, 2),
+            "Vendas Valor Bruto": formatExcelDecimal(p.vendasValorBrutoPeriodo, 2),
             "Dias Inativos": p.diasInativos,
-            "Venda Perdida (Liq)": p.vendaPerdidaLiquida.toFixed(2),
-            "Venda Perdida (Bruta)": p.vendaPerdidaBruta.toFixed(2),
+            "Venda Perdida (Liq)": formatExcelDecimal(p.vendaPerdidaLiquida, 2),
+            "Venda Perdida (Bruta)": formatExcelDecimal(p.vendaPerdidaBruta, 2),
             "Em Transferência": p.emTransf,
             "Tamanho da Caixa": p.tamanhoCaixa,
-            "Nº Caixas": p.numCaixas,
-            "Dias Estoque Full": p.diasEstoqueFull > 0 ? p.diasEstoqueFull.toFixed(1) : "—",
-            "Dias Estoque Total": p.diasEstoqueTotal > 0 ? p.diasEstoqueTotal.toFixed(1) : "—",
+            "Nº Caixas": formatExcelDecimal(p.numCaixas, 2),
+            "Dias Estoque Full": p.diasEstoqueFull > 0 ? formatExcelDecimal(p.diasEstoqueFull, 1) : 0,
+            "Dias Estoque Total": p.diasEstoqueTotal > 0 ? formatExcelDecimal(p.diasEstoqueTotal, 1) : 0,
 
             "Dias Desejado (Total)": p.diasDesejadoItem + (parametros?.leadTime || 7),
             "Sugestão Reposição": p.sugestaoReposicao,
             "Necessidade": p.necessidade,
-            "ASP": p.asp.toFixed(2),
-            "Mark up": p.markup.toFixed(2),
+            "ASP": formatExcelDecimal(p.asp, 2),
+            "Mark up": formatExcelDecimal(p.markup, 2),
             "Status": p.status
         }));
 

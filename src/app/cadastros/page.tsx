@@ -4,11 +4,13 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useUI } from "@/lib/ui-context";
-import { Search, RefreshCw, Package, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { Search, Package, ChevronLeft, ChevronRight, Upload, Download } from "lucide-react";
+import { utils, writeFile } from "xlsx";
 import { parseCadastrosExcel } from "@/app/reposicao-full/excel-utils";
 
 interface Produto {
     sku: string;
+    ean: string;
     descricao: string;
     mlb: string;
     mlbCatalogo: string;
@@ -19,10 +21,29 @@ interface Produto {
     emTransf: number;
 }
 
+interface CadastroUpdate {
+    sku: string;
+    marca?: string;
+    fornecedor?: string;
+    tamanhoCaixa?: number;
+}
+
+interface UploadResult {
+    error?: string;
+    totalUpdated: number;
+    totalEncontrados: number;
+    totalPlanilha: number;
+}
+
+interface ProductsResult {
+    products?: Produto[];
+    error?: string;
+}
+
 const PAGE_SIZE = 25;
 
 export default function CadastrosPage() {
-    const { user, loading, userData } = useAuth();
+    const { user, loading } = useAuth();
     const { showAlert } = useUI();
     const router = useRouter();
 
@@ -39,22 +60,47 @@ export default function CadastrosPage() {
         }
     }, [user, loading, router]);
 
-    // Load products from the reposicao state (localStorage) for now
-    // Later this will come from /api/products (Firestore)
     useEffect(() => {
         if (!user) return;
-        try {
-            const stored = localStorage.getItem("@SellerDock:ReposicaoFull");
-            if (stored) {
-                const data = JSON.parse(stored);
-                if (data.produtosRaw && Array.isArray(data.produtosRaw)) {
-                    setProdutos(data.produtosRaw);
+
+        const loadProducts = async () => {
+            setIsLoading(true);
+            try {
+                const token = await user.getIdToken();
+                const res = await fetch("/api/reposicao-full/products", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const result = await res.json() as ProductsResult;
+
+                if (!res.ok) {
+                    throw new Error(result.error || "Erro ao buscar produtos");
                 }
+
+                if (Array.isArray(result.products)) {
+                    setProdutos(result.products);
+                    setIsLoading(false);
+                    return;
+                }
+            } catch (e) {
+                console.error("Failed to load products for cadastros from API", e);
             }
-        } catch (e) {
-            console.error("Failed to load products for cadastros", e);
-        }
-        setIsLoading(false);
+
+            try {
+                const stored = localStorage.getItem("@SellerDock:ReposicaoFull");
+                if (stored) {
+                    const data = JSON.parse(stored) as { produtosRaw?: Produto[] };
+                    if (data.produtosRaw && Array.isArray(data.produtosRaw)) {
+                        setProdutos(data.produtosRaw);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load products for cadastros from localStorage", e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadProducts();
     }, [user]);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,7 +132,7 @@ export default function CadastrosPage() {
                 body: JSON.stringify({ items: data })
             });
 
-            const result = await res.json();
+            const result = await res.json() as UploadResult;
 
             if (!res.ok) {
                 throw new Error(result.error || "Erro ao fazer upload");
@@ -107,10 +153,10 @@ export default function CadastrosPage() {
             // Update local state and localStorage for immediate feedback
             const stored = localStorage.getItem("@SellerDock:ReposicaoFull");
             if (stored) {
-                const parsedStored = JSON.parse(stored);
+                const parsedStored = JSON.parse(stored) as { produtosRaw?: Produto[] };
                 if (parsedStored.produtosRaw && Array.isArray(parsedStored.produtosRaw)) {
-                    const dataMap = new Map(data.map((d: any) => [d.sku, d]));
-                    const updatedProdutos = parsedStored.produtosRaw.map((p: any) => {
+                    const dataMap = new Map<string, CadastroUpdate>(data.map((d) => [d.sku, d]));
+                    const updatedProdutos = parsedStored.produtosRaw.map((p) => {
                         const newData = dataMap.get(p.sku);
                         if (newData) {
                             return {
@@ -129,8 +175,8 @@ export default function CadastrosPage() {
                 }
             }
 
-        } catch (err: any) {
-            showAlert("Erro", err.message || "Falha ao processar arquivo", "error");
+        } catch (err: unknown) {
+            showAlert("Erro", err instanceof Error ? err.message : "Falha ao processar arquivo", "error");
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
@@ -142,12 +188,53 @@ export default function CadastrosPage() {
         const q = busca.toLowerCase();
         return produtos.filter(p =>
             p.sku.toLowerCase().includes(q) ||
+            (p.ean || "").toLowerCase().includes(q) ||
             p.descricao.toLowerCase().includes(q) ||
             (p.mlb || "").toLowerCase().includes(q) ||
             (p.fornecedor || "").toLowerCase().includes(q) ||
             (p.marca || "").toLowerCase().includes(q)
         );
     }, [produtos, busca]);
+
+    const handleExportExcel = () => {
+        if (filtered.length === 0) {
+            showAlert("Aviso", "Nenhum cadastro para exportar.", "warning");
+            return;
+        }
+
+        const exportData = filtered.map((p) => ({
+            "SKU": p.sku,
+            "EAN": p.ean || "",
+            "Descricao": p.descricao,
+            "MLB": p.mlb || "",
+            "MLB Catalogo": p.mlbCatalogo || "",
+            "Marca": p.marca || "",
+            "Fornecedor": p.fornecedor || "",
+            "Estoque Empresa": p.estoqueEmpresa ?? 0,
+            "Tamanho Caixa": p.tamanhoCaixa ?? 0,
+            "Em Transferencia": p.emTransf ?? 0,
+        }));
+
+        const ws = utils.json_to_sheet(exportData);
+        ws["!cols"] = [
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 60 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 24 },
+            { wch: 28 },
+            { wch: 16 },
+            { wch: 16 },
+            { wch: 18 },
+        ];
+
+        const wb = utils.book_new();
+        utils.book_append_sheet(wb, ws, "Cadastros");
+
+        const date = new Date().toISOString().slice(0, 10);
+        writeFile(wb, `cadastros_${date}.xlsx`);
+    };
 
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -185,14 +272,23 @@ export default function CadastrosPage() {
                     <button
                         onClick={() => fileInputRef.current?.click()}
                         disabled={isUploading}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 font-medium text-sm"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#2d3277] text-white rounded-lg hover:bg-[#252963] transition-colors disabled:opacity-50 font-medium text-sm"
                     >
                         {isUploading ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700"></div>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                         ) : (
                             <Upload className="w-4 h-4" />
                         )}
                         Atualizar via Excel
+                    </button>
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={filtered.length === 0}
+                        title={busca.trim() ? "Exportar cadastros filtrados" : "Exportar todos os cadastros"}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
+                    >
+                        <Download className="w-4 h-4" />
+                        Exportar Excel
                     </button>
                     <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg font-medium">
                         <Package className="w-4 h-4 inline mr-1.5 -mt-0.5" />
@@ -234,6 +330,7 @@ export default function CadastrosPage() {
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-100">
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">SKU</th>
+                                        <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">EAN</th>
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Descrição</th>
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">MLB</th>
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">MLB Catálogo</th>
@@ -247,6 +344,7 @@ export default function CadastrosPage() {
                                     {paginated.map((p) => (
                                         <tr key={p.sku} className="hover:bg-blue-50/30 transition-colors">
                                             <td className="px-4 py-3 font-mono text-xs font-medium text-[#2d3277]">{p.sku}</td>
+                                            <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.ean || "â€”"}</td>
                                             <td className="px-4 py-3 text-gray-700 max-w-[300px] truncate" title={p.descricao}>{p.descricao}</td>
                                             <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.mlb || "—"}</td>
                                             <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.mlbCatalogo || "—"}</td>

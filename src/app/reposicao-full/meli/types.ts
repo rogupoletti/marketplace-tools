@@ -1,5 +1,6 @@
 export interface ProdutoRaw {
     sku: string;
+    ean?: string;
     descricao: string;
     mlb: string; // From excel, raw string
     mlbCatalogo: string;

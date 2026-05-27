@@ -61,6 +61,24 @@ const DEFAULT_FILTROS: Filtros = {
     reposicaoMin: null,
 };
 
+const DEFAULT_VISIBLE_COLUMNS = [
+    'sku', 'curvaABC', 'curvaABCFornecedor', 'ean', 'shopeeItemId', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'qtdeMaxPermitida', 'sugestaoReposicao'
+];
+
+function ensureEanColumn(cols: unknown): string[] {
+    if (!Array.isArray(cols)) return DEFAULT_VISIBLE_COLUMNS;
+
+    const visibleColumns = cols.filter((col): col is string => typeof col === "string");
+    if (visibleColumns.length === 0) return DEFAULT_VISIBLE_COLUMNS;
+
+    if (!visibleColumns.includes("ean")) {
+        const insertAfter = visibleColumns.indexOf("curvaABCFornecedor");
+        visibleColumns.splice(insertAfter >= 0 ? insertAfter + 1 : 1, 0, "ean");
+    }
+
+    return visibleColumns;
+}
+
 export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const { user } = useAuth();
     const [isLoaded, setIsLoaded] = useState(false);
@@ -71,9 +89,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const [filtros, setFiltrosState] = useState<Filtros>(DEFAULT_FILTROS);
     const [selectedSkus, setSelectedSkusState] = useState<string[]>([]);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-    const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>([
-        'sku', 'curvaABC', 'curvaABCFornecedor', 'shopeeItemId', 'estoqueFull', 'emTransf', 'tamanhoCaixa', 'numCaixas', 'status', 'diasInativos', 'giroDiarioQtd', 'necessidade', 'qtdeMaxPermitida', 'sugestaoReposicao'
-    ]);
+    const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [isFetchingSales, setIsFetchingSales] = useState(false);
     const [resetUploadTrigger, setResetUploadTrigger] = useState(0);
     const [agendamentoMap, setAgendamentoMapState] = useState<Record<string, number>>({});
@@ -91,7 +107,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 if (data.parametros) setParametrosState(data.parametros);
                 if (data.overridesGlobais) setOverridesGlobaisState(data.overridesGlobais);
                 if (data.lastUpdate) setLastUpdate(new Date(data.lastUpdate));
-                if (data.colunasVisiveis) setColunasVisiveisState(data.colunasVisiveis);
+                if (data.colunasVisiveis) setColunasVisiveisState(ensureEanColumn(data.colunasVisiveis));
                 if (data.agendamentoMap) {
                     setAgendamentoMapState(data.agendamentoMap);
                     setHasAgendamento(true);
@@ -125,7 +141,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 parametros,
                 overridesGlobais,
                 lastUpdate: now.toISOString(),
-                colunasVisiveis,
+                colunasVisiveis: ensureEanColumn(colunasVisiveis),
                 agendamentoMap,
                 hasEstoqueShopee,
             }));
@@ -362,8 +378,9 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 const query = filtros.busca.toLowerCase();
                 const matchesSku = item.sku.toLowerCase().includes(query);
                 const matchesDesc = item.descricao.toLowerCase().includes(query);
+                const matchesEan = (item.ean || "").toLowerCase().includes(query);
                 const matchesId = (item.shopeeItemId || "").toLowerCase().includes(query) || (item.shopeeModelId || "").toLowerCase().includes(query);
-                if (!matchesSku && !matchesDesc && !matchesId) return false;
+                if (!matchesSku && !matchesDesc && !matchesEan && !matchesId) return false;
             }
             if (filtros.status.length > 0) {
                 if (!filtros.status.includes(item.status)) return false;
@@ -416,7 +433,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 },
                 colunasVisiveis,
                 setColunasVisiveis: (cols: string[]) => {
-                    setColunasVisiveisState(cols);
+                    setColunasVisiveisState(ensureEanColumn(cols));
                 },
                 setAgendamentoMap,
                 hasAgendamento,

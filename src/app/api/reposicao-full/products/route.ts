@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
             const data = doc.data();
             return {
                 sku: data.sku || doc.id,
+                ean: data.ean || "",
                 descricao: data.descricao || "",
                 mlb: data.mlb || "",
                 mlbCatalogo: data.mlbCatalogo || "",
@@ -49,8 +50,9 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ products });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Erro ao buscar produtos:", error);
-        return NextResponse.json({ error: "Erro interno: " + error.message }, { status: 500 });
+        const message = error instanceof Error ? error.message : "Erro desconhecido";
+        return NextResponse.json({ error: "Erro interno: " + message }, { status: 500 });
     }
 }
