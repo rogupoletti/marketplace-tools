@@ -1,20 +1,22 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { 
-    LayoutDashboard, 
-    Calculator, 
-    PackageSearch, 
-    BarChart3, 
-    Settings, 
-    ChevronDown, 
+import {
+    BarChart3,
+    Calculator,
+    ChevronDown,
     ChevronRight,
+    LayoutDashboard,
+    PackageSearch,
     PanelLeftClose,
     PanelLeftOpen,
+    RotateCcw,
     ShieldCheck,
-    Zap
+    Zap,
+    type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -25,6 +27,32 @@ interface SidebarProps {
     setIsHovered: (hovered: boolean) => void;
 }
 
+interface SubItem {
+    name: string;
+    href: string;
+}
+
+type NavItem =
+    | {
+        name: string;
+        href: string;
+        icon: LucideIcon;
+        isDropdown?: false;
+    }
+    | {
+        name: string;
+        icon: LucideIcon;
+        isDropdown: true;
+        isOpen: boolean;
+        toggle: () => void;
+        subItems: SubItem[];
+    };
+
+interface NavSection {
+    section: string;
+    items: NavItem[];
+}
+
 export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsHovered }: SidebarProps) {
     const pathname = usePathname();
     const { userData } = useAuth();
@@ -33,105 +61,110 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
     const [isReposFullOpen, setIsReposFullOpen] = useState(false);
 
     const actualCollapsed = isCollapsed && !isHovered;
+    const isAdmin = userData?.isAdmin || userData?.role === "superadmin" || userData?.role === "account_admin";
+    const canAccessReturns = userData?.role !== "subaccount_user";
+    const actualCalculadorasOpen = isCalculadorasOpen || pathname.includes("/shopee") || pathname.includes("/meli") || pathname.includes("/amazon");
+    const actualIntegracoesOpen = isIntegracoesOpen || pathname.includes("/integrations");
+    const actualReposFullOpen = isReposFullOpen || pathname.includes("/reposicao-full");
 
-    const isAdmin = userData?.isAdmin || userData?.role === 'superadmin' || userData?.role === 'account_admin';
-
-    // Auto-open calculators if on a calculator page
-    useEffect(() => {
-        if (pathname.includes('/shopee') || pathname.includes('/meli') || pathname.includes('/amazon')) {
-            setIsCalculadorasOpen(true);
-        }
-        if (pathname.includes('/integrations')) {
-            setIsIntegracoesOpen(true);
-        }
-    }, [pathname]);
-
-    const navItems = [
+    const navItems: NavSection[] = [
         {
             section: "OPERACIONAL",
             items: [
-                { name: "Reposição Full", icon: PackageSearch, isDropdown: true, isOpen: isReposFullOpen, toggle: () => setIsReposFullOpen(!isReposFullOpen), subItems: [ { name: "Mercado Livre", href: "/reposicao-full/meli" }, { name: "Shopee", href: "/reposicao-full/shopee" } ] },
+                {
+                    name: "Reposição Full",
+                    icon: PackageSearch,
+                    isDropdown: true,
+                    isOpen: actualReposFullOpen,
+                    toggle: () => setIsReposFullOpen(!isReposFullOpen),
+                    subItems: [
+                        { name: "Mercado Livre", href: "/reposicao-full/meli" },
+                        { name: "Shopee", href: "/reposicao-full/shopee" },
+                    ],
+                },
+                ...(canAccessReturns ? [{ name: "Devoluções", href: "/returns", icon: RotateCcw } satisfies NavItem] : []),
                 { name: "Cadastros", href: "/cadastros", icon: LayoutDashboard },
                 { name: "Relatórios", href: "/dash", icon: BarChart3 },
-            ]
+            ],
         },
         {
             section: "FERRAMENTAS",
             items: [
-                { 
-                    name: "Calculadoras", 
+                {
+                    name: "Calculadoras",
                     icon: Calculator,
                     isDropdown: true,
-                    isOpen: isCalculadorasOpen,
+                    isOpen: actualCalculadorasOpen,
                     toggle: () => setIsCalculadorasOpen(!isCalculadorasOpen),
                     subItems: [
                         { name: "Shopee", href: "/shopee" },
                         { name: "Mercado Livre", href: "/meli" },
                         { name: "Amazon", href: "/amazon" },
-                    ]
+                    ],
                 },
-            ]
+            ],
         },
         {
             section: "CONFIGURAÇÕES",
             items: [
-                ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: ShieldCheck }] : []),
-                { 
-                    name: "Integrações", 
+                ...(isAdmin ? [{ name: "Admin", href: "/admin", icon: ShieldCheck } satisfies NavItem] : []),
+                {
+                    name: "Integrações",
                     icon: Zap,
                     isDropdown: true,
-                    isOpen: isIntegracoesOpen,
+                    isOpen: actualIntegracoesOpen,
                     toggle: () => setIsIntegracoesOpen(!isIntegracoesOpen),
                     subItems: [
                         { name: "Anymarket", href: "/integrations/anymarket" },
                         { name: "Mercado Livre", href: "/integrations/mercadolivre" },
-                    ]
+                    ],
                 },
-            ]
-        }
+            ],
+        },
     ];
 
     return (
-        <aside 
+        <aside
             className={`sticky top-0 h-screen bg-white text-gray-500 transition-all duration-300 z-50 flex flex-col border-r border-gray-200 flex-shrink-0
-                ${actualCollapsed ? 'w-20' : 'w-64'}`}
+                ${actualCollapsed ? "w-20" : "w-64"}`}
             onMouseEnter={() => isCollapsed && setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            {/* Logo Section */}
             <div className="h-20 flex items-center px-6 border-b border-gray-100">
                 <Link href="/" className="flex items-center gap-3 group">
                     <div className="min-w-[32px] h-10 flex items-center justify-center transition-transform group-hover:scale-105">
-                        <img src="/images/logo-symbol.png" alt="S" className="h-8 w-auto object-contain" />
+                        <Image src="/images/logo-symbol.png" alt="S" width={32} height={32} className="h-8 w-auto object-contain" />
                     </div>
-                    <span className={`font-bold text-xl text-gray-900 tracking-tight transition-all duration-300 whitespace-nowrap ${actualCollapsed ? 'opacity-0 invisible w-0' : 'opacity-100 visible w-auto'}`}>
+                    <span className={`font-bold text-xl text-gray-900 tracking-tight transition-all duration-300 whitespace-nowrap ${actualCollapsed ? "opacity-0 invisible w-0" : "opacity-100 visible w-auto"}`}>
                         Seller<span className="text-blue-600">Dock</span>
                     </span>
                 </Link>
             </div>
 
-            {/* Navigation Section */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 scrollbar-thin scrollbar-thumb-gray-200">
-                {navItems.map((section, idx) => (
-                    <div key={idx} className="mb-6">
-                        <h3 className={`px-6 mb-2 text-[10px] font-bold tracking-widest text-gray-400 transition-opacity duration-300 ${actualCollapsed ? 'opacity-0' : 'opacity-100'}`}>
+                {navItems.map((section) => (
+                    <div key={section.section} className="mb-6">
+                        <h3 className={`px-6 mb-2 text-[10px] font-bold tracking-widest text-gray-400 transition-opacity duration-300 ${actualCollapsed ? "opacity-0" : "opacity-100"}`}>
                             {section.section}
                         </h3>
-                        
-                        <div className={`space-y-1 ${actualCollapsed ? 'px-2' : 'px-3'}`}>
-                            {section.items.map((item: any) => {
-                                const isActive = pathname === item.href || (item.subItems?.some((s: any) => pathname === s.href));
-                                
+
+                        <div className={`space-y-1 ${actualCollapsed ? "px-2" : "px-3"}`}>
+                            {section.items.map((item) => {
+                                const Icon = item.icon;
+                                const isActive = item.isDropdown
+                                    ? item.subItems.some((sub) => pathname === sub.href)
+                                    : pathname === item.href;
+
                                 if (item.isDropdown) {
                                     return (
                                         <div key={item.name} className="relative">
-                                            <button 
+                                            <button
                                                 onClick={item.toggle}
                                                 className={`w-full flex items-center rounded-xl transition-all group cursor-pointer
-                                                    ${actualCollapsed ? 'aspect-square justify-center' : 'px-3 py-3 gap-3'}
-                                                    ${isActive ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50 hover:text-gray-900'}`}
+                                                    ${actualCollapsed ? "aspect-square justify-center" : "px-3 py-3 gap-3"}
+                                                    ${isActive ? "bg-blue-50 text-blue-600" : "hover:bg-gray-50 hover:text-gray-900"}`}
                                             >
-                                                <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'group-hover:text-gray-900 transition-colors'}`} />
+                                                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-blue-600" : "group-hover:text-gray-900 transition-colors"}`} />
                                                 {!actualCollapsed && (
                                                     <>
                                                         <span className="flex-1 text-sm font-medium text-left whitespace-nowrap animate-in fade-in duration-300">
@@ -141,15 +174,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                                                     </>
                                                 )}
                                             </button>
-                                            
-                                            {/* Submenu */}
-                                            <div className={`overflow-hidden transition-all duration-300 ${(!actualCollapsed && item.isOpen) ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
-                                                {item.subItems?.map((sub: any) => (
-                                                    <Link 
+
+                                            <div className={`overflow-hidden transition-all duration-300 ${(!actualCollapsed && item.isOpen) ? "max-h-40 opacity-100 mt-1" : "max-h-0 opacity-0"}`}>
+                                                {item.subItems.map((sub) => (
+                                                    <Link
                                                         key={sub.name}
                                                         href={sub.href}
                                                         className={`flex items-center gap-3 pl-11 pr-3 py-2 text-sm rounded-lg transition-colors whitespace-nowrap
-                                                            ${pathname === sub.href ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                                                            ${pathname === sub.href ? "text-blue-600 font-semibold" : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"}`}
                                                     >
                                                         {sub.name}
                                                     </Link>
@@ -160,14 +192,14 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                                 }
 
                                 return (
-                                    <Link 
+                                    <Link
                                         key={item.name}
-                                        href={item.href || '#'}
+                                        href={item.href}
                                         className={`w-full flex items-center rounded-xl transition-all group
-                                            ${actualCollapsed ? 'aspect-square justify-center' : 'px-3 py-3 gap-3'}
-                                            ${pathname === item.href ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/10' : 'hover:bg-gray-50 hover:text-gray-900'}`}
+                                            ${actualCollapsed ? "aspect-square justify-center" : "px-3 py-3 gap-3"}
+                                            ${pathname === item.href ? "bg-blue-600 text-white shadow-lg shadow-blue-600/10" : "hover:bg-gray-50 hover:text-gray-900"}`}
                                     >
-                                        <item.icon className={`w-5 h-5 flex-shrink-0 ${pathname === item.href ? 'text-white' : 'group-hover:text-gray-900 transition-colors'}`} />
+                                        <Icon className={`w-5 h-5 flex-shrink-0 ${pathname === item.href ? "text-white" : "group-hover:text-gray-900 transition-colors"}`} />
                                         {!actualCollapsed && (
                                             <span className="text-sm font-medium whitespace-nowrap animate-in fade-in duration-300">
                                                 {item.name}
@@ -181,12 +213,11 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                 ))}
             </div>
 
-            {/* Footer Section */}
             <div className="p-4 border-t border-gray-100">
-                <button 
+                <button
                     onClick={() => setIsCollapsed(!isCollapsed)}
                     className={`w-full flex items-center rounded-xl hover:bg-gray-50 text-gray-400 hover:text-gray-900 transition-all group cursor-pointer
-                        ${actualCollapsed ? 'aspect-square justify-center' : 'px-3 py-3 gap-3'}`}
+                        ${actualCollapsed ? "aspect-square justify-center" : "px-3 py-3 gap-3"}`}
                 >
                     {isCollapsed ? (
                         <PanelLeftOpen className="w-5 h-5 flex-shrink-0 group-hover:scale-110 transition-transform" />
