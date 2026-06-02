@@ -5,6 +5,7 @@ import { decryptToken } from "../../utils/crypto";
 import { AnymarketIntegrationStatus, AnymarketOrder, NormalizedOrderItem } from "./anymarket-types";
 import { normalizeOrder } from "./normalize-order";
 import { saveSales } from "./save-sales";
+import { normalizeAnyMarketReturnWebhookPayload } from "./returns-webhook";
 
 export async function syncOrders(accountId: string, daysBefore: number = 90) {
     const integrationRef = adminDb.collection("accounts").doc(accountId).collection("integrations").doc("anymarket");
@@ -52,13 +53,14 @@ export async function syncOrders(accountId: string, daysBefore: number = 90) {
             const orders = page.content;
 
             if (orders.length > 0) {
+                const saleOrders = orders.filter(order => !normalizeAnyMarketReturnWebhookPayload(order).isReturnEvent);
                 const normalizedItems: NormalizedOrderItem[] = [];
-                orders.forEach(order => {
+                saleOrders.forEach(order => {
                     const items = normalizeOrder(order);
                     normalizedItems.push(...items);
                 });
 
-                await saveSales(accountId, orders, normalizedItems);
+                await saveSales(accountId, saleOrders, normalizedItems);
                 totalProcessed += orders.length;
                 offset += orders.length;
 

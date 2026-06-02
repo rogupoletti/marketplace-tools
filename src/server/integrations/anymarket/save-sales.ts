@@ -1,6 +1,7 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase-admin";
 import { AnymarketOrder, NormalizedOrderItem } from "./anymarket-types";
+import { normalizeAnyMarketReturnWebhookPayload } from "./returns-webhook";
 
 const VALID_STATUSES = [
     'PAID_WAITING_SHIP', 
@@ -12,6 +13,9 @@ const VALID_STATUSES = [
 ];
 
 export async function saveSales(accountId: string, rawOrders: AnymarketOrder[], normalizedItems: NormalizedOrderItem[]) {
+    const saleOrders = rawOrders.filter(order => !normalizeAnyMarketReturnWebhookPayload(order).isReturnEvent);
+    const saleOrderIds = new Set(saleOrders.map(order => order.id.toString()));
+    const saleItems = normalizedItems.filter(item => saleOrderIds.has(item.orderId));
     const BATCH_LIMIT = 400; 
     let batch = adminDb.batch();
     let count = 0;
@@ -29,7 +33,7 @@ export async function saveSales(accountId: string, rawOrders: AnymarketOrder[], 
 
     // 1. Buscar status dos pedidos existentes
     // 1. Buscar status dos pedidos existentes (em paralelo para performance)
-    const orderIds = rawOrders.map(o => o.id.toString());
+    const orderIds = saleOrders.map(o => o.id.toString());
     const existingOrdersMap = new Map<string, AnymarketOrder>();
     const chunks: string[][] = [];
     
@@ -46,10 +50,10 @@ export async function saveSales(accountId: string, rawOrders: AnymarketOrder[], 
         });
     }));
 
-    console.log(`[Save Sales] Processando ${rawOrders.length} pedidos...`);
+    console.log(`[Save Sales] Processando ${saleOrders.length} pedidos de venda...`);
 
     // 2. Processar cada pedido com lógica de status
-    for (const order of rawOrders) {
+    for (const order of saleOrders) {
         const orderIdStr = order.id.toString();
         const existingOrder = existingOrdersMap.get(orderIdStr);
         
@@ -68,7 +72,7 @@ export async function saveSales(accountId: string, rawOrders: AnymarketOrder[], 
         batch.set(orderRef, order, { merge: true });
         count++;
 
-        const items = normalizedItems.filter(item => item.orderId === orderIdStr);
+        const items = saleItems.filter(item => item.orderId === orderIdStr);
         
         for (const item of items) {
             // Atualiza os itens

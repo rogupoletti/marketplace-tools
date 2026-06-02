@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { normalizeAnyMarketReturnWebhookPayload } from "@/server/integrations/anymarket/returns-webhook";
+
+const VALID_STATUSES = [
+    "PAID_WAITING_SHIP",
+    "PAID_WAITING_DELIVERY",
+    "INVOICED",
+    "CONCLUDED",
+    "SHIPPED",
+    "DELIVERED",
+];
 
 export async function POST(request: NextRequest) {
     try {
@@ -45,6 +55,15 @@ export async function POST(request: NextRequest) {
             console.log("[Repair Data] salesDaily limpa.");
 
             // 2. Buscar todos os itens de orderItems
+            const ordersSnapshot = await accountRef.collection("anymarketOrders").get();
+            const validSaleOrders = new Set<string>();
+            ordersSnapshot.forEach((doc) => {
+                const order = doc.data();
+                if (VALID_STATUSES.includes(order.status) && !normalizeAnyMarketReturnWebhookPayload(order).isReturnEvent) {
+                    validSaleOrders.add(doc.id);
+                }
+            });
+
             const itemsSnapshot = await accountRef.collection("anymarketOrderItems").get();
             console.log(`[Repair Data] Processando ${itemsSnapshot.size} itens para nova agregação...`);
 
@@ -53,6 +72,7 @@ export async function POST(request: NextRequest) {
 
             for (const doc of itemsSnapshot.docs) {
                 const item = doc.data();
+                if (!validSaleOrders.has(String(item.orderId || ""))) continue;
                 
                 // Padronização do marketplace
                 const marketplace = (item.marketplace || "UNKNOWN").toUpperCase().includes("MERCADO") 

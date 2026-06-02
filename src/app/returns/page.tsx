@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-    AlertCircle,
     AlertTriangle,
     CalendarDays,
     CheckCircle2,
@@ -12,6 +11,7 @@ import {
     FileText,
     Filter,
     Loader2,
+    MoreVertical,
     PackageOpen,
     Plus,
     RefreshCw,
@@ -34,6 +34,7 @@ import {
     RETURN_CHANNEL_LABELS,
     RETURN_CHANNELS,
     RETURN_HISTORY_ACTION_LABELS,
+    RETURN_SOURCE_LABELS,
     RETURN_STATUS_LABELS,
     RETURN_STATUSES,
     RETURN_TYPE_LABELS,
@@ -77,6 +78,10 @@ function formatDateTime(value: string) {
         hour: "2-digit",
         minute: "2-digit",
     });
+}
+
+function sourceLabel(item: MarketplaceReturn) {
+    return RETURN_SOURCE_LABELS[item.source || "manual"];
 }
 
 function statusColor(status: ReturnStatus) {
@@ -128,6 +133,7 @@ export default function ReturnsPage() {
     const [pendingIssueReturn, setPendingIssueReturn] = useState<MarketplaceReturn | null>(null);
     const [pendingIssueText, setPendingIssueText] = useState("");
     const [isSavingIssue, setIsSavingIssue] = useState(false);
+    const [isDetailMenuOpen, setIsDetailMenuOpen] = useState(false);
 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingReturn, setEditingReturn] = useState<MarketplaceReturn | null>(null);
@@ -265,6 +271,7 @@ export default function ReturnsPage() {
     };
 
     const openEditForm = (item: MarketplaceReturn) => {
+        setIsDetailMenuOpen(false);
         setEditingReturn(item);
         setForm({
             orderNumber: item.orderNumber,
@@ -283,6 +290,7 @@ export default function ReturnsPage() {
     const fetchReturnDetail = async (item: MarketplaceReturn) => {
         if (!user) return;
         setSelectedReturn(item);
+        setIsDetailMenuOpen(false);
         setIsDetailLoading(true);
         try {
             const token = await user.getIdToken();
@@ -412,14 +420,6 @@ export default function ReturnsPage() {
         }
     };
 
-    const confirmStatus = (item: MarketplaceReturn, status: ReturnStatus) => {
-        const title = status === "cancelled" ? "Cancelar devolução" : "Finalizar devolução";
-        const message = status === "cancelled"
-            ? "Tem certeza que deseja cancelar esta devolução?"
-            : "Tem certeza que deseja finalizar esta devolução?";
-        showConfirm(title, message, () => handleStatusChange(item, status));
-    };
-
     const handleDeleteReturn = async (item: MarketplaceReturn) => {
         if (!user) return;
 
@@ -445,6 +445,7 @@ export default function ReturnsPage() {
     };
 
     const confirmDeleteReturn = (item: MarketplaceReturn) => {
+        setIsDetailMenuOpen(false);
         showConfirm(
             "Apagar devolução",
             "Tem certeza que deseja apagar esta devolução manual? Esta ação remove também o histórico.",
@@ -876,9 +877,17 @@ export default function ReturnsPage() {
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase">Pedido</p>
                                                         <h3 className="font-bold text-gray-900 truncate">{item.orderNumber}</h3>
                                                     </div>
-                                                    <span className="text-[11px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">
-                                                        {RETURN_CHANNEL_LABELS[item.channel]}
-                                                    </span>
+                                                    <div className="flex flex-col items-end gap-1">
+                                                        <span className="text-[11px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">
+                                                            {RETURN_CHANNEL_LABELS[item.channel]}
+                                                        </span>
+                                                        <span className={item.source === "anymarket"
+                                                            ? "text-[11px] font-bold bg-blue-50 text-[#2d3277] px-2 py-1 rounded-md"
+                                                            : "text-[11px] font-bold bg-gray-50 text-gray-500 px-2 py-1 rounded-md"
+                                                        }>
+                                                            {sourceLabel(item)}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
                                                 <div className="space-y-2 text-sm">
@@ -887,6 +896,11 @@ export default function ReturnsPage() {
                                                         <span className="text-xs text-gray-600 bg-gray-50 border border-gray-100 px-2 py-1 rounded-md">
                                                             {RETURN_TYPE_LABELS[item.returnType]}
                                                         </span>
+                                                        {item.anymarketStatus && (
+                                                            <span className="text-xs text-[#2d3277] bg-blue-50 border border-blue-100 px-2 py-1 rounded-md">
+                                                                AnyMarket: {item.anymarketStatus}
+                                                            </span>
+                                                        )}
                                                         {item.invoiceNumber && (
                                                             <span className="text-xs text-gray-600 bg-gray-50 border border-gray-100 px-2 py-1 rounded-md">
                                                                 NF {item.invoiceNumber}
@@ -1124,19 +1138,61 @@ export default function ReturnsPage() {
                             <div>
                                 <p className="text-xs font-bold text-gray-400 uppercase">Pedido</p>
                                 <h2 className="text-xl font-bold text-gray-900">{selectedReturn.orderNumber}</h2>
-                                <span className={`inline-flex mt-2 text-xs font-bold px-2 py-1 rounded-full border ${statusColor(selectedReturn.status)}`}>
-                                    {RETURN_STATUS_LABELS[selectedReturn.status]}
-                                </span>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    <span className={`inline-flex text-xs font-bold px-2 py-1 rounded-full border ${statusColor(selectedReturn.status)}`}>
+                                        {RETURN_STATUS_LABELS[selectedReturn.status]}
+                                    </span>
+                                    <span className={selectedReturn.source === "anymarket"
+                                        ? "inline-flex text-xs font-bold px-2 py-1 rounded-full border border-blue-100 bg-blue-50 text-[#2d3277]"
+                                        : "inline-flex text-xs font-bold px-2 py-1 rounded-full border border-gray-100 bg-gray-50 text-gray-600"
+                                    }>
+                                        {sourceLabel(selectedReturn)}
+                                    </span>
+                                </div>
                             </div>
-                            <button
-                                onClick={() => {
-                                    setSelectedReturn(null);
-                                    setHistory([]);
-                                }}
-                                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsDetailMenuOpen((current) => !current)}
+                                        aria-label="Ações da devolução"
+                                        aria-expanded={isDetailMenuOpen}
+                                        className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
+                                    >
+                                        <MoreVertical className="w-5 h-5" />
+                                    </button>
+                                    {isDetailMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-2 w-40 rounded-lg border border-gray-100 bg-white py-1 shadow-xl z-10">
+                                            <button
+                                                type="button"
+                                                onClick={() => openEditForm(selectedReturn)}
+                                                className="w-full inline-flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                            >
+                                                <Edit3 className="w-4 h-4" />
+                                                Editar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => confirmDeleteReturn(selectedReturn)}
+                                                className="w-full inline-flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                                Apagar
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setSelectedReturn(null);
+                                        setHistory([]);
+                                        setIsDetailMenuOpen(false);
+                                    }}
+                                    className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         {isDetailLoading ? (
@@ -1169,6 +1225,51 @@ export default function ReturnsPage() {
                                     </div>
                                 </div>
 
+                                {selectedReturn.source === "anymarket" && (
+                                    <div className="bg-white border border-blue-100 rounded-xl p-4">
+                                        <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-3">
+                                            <RefreshCw className="w-4 h-4 text-[#2d3277]" />
+                                            AnyMarket
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Marketplace</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.marketplace || RETURN_CHANNEL_LABELS[selectedReturn.channel]}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Status externo</p>
+                                                <p className="font-semibold text-gray-800 mt-1">{selectedReturn.anymarketStatus || "-"}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Pedido marketplace</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.marketplaceOrderId || selectedReturn.externalOrderId || "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Ultimo webhook</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.lastWebhookReceivedAt ? formatDateTime(selectedReturn.lastWebhookReceivedAt) : "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Rastreio reverso</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.trackingCode || "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Transportadora</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.trackingCarrier || "-"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {getQuickActions(selectedReturn).length > 0 && (
                                     <div className="bg-white border border-gray-100 rounded-xl p-4">
                                         <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-3">
@@ -1194,38 +1295,6 @@ export default function ReturnsPage() {
                                                 <option key={status} value={status}>{RETURN_STATUS_LABELS[status]}</option>
                                             ))}
                                         </select>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        <button
-                                            onClick={() => openEditForm(selectedReturn)}
-                                            className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-sm font-semibold"
-                                        >
-                                            <Edit3 className="w-4 h-4" />
-                                            Editar
-                                        </button>
-                                        <button
-                                            onClick={() => confirmStatus(selectedReturn, "resolved")}
-                                            disabled={selectedReturn.status === "resolved"}
-                                            className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-lg text-sm font-semibold"
-                                        >
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            Finalizar
-                                        </button>
-                                        <button
-                                            onClick={() => confirmStatus(selectedReturn, "cancelled")}
-                                            disabled={selectedReturn.status === "cancelled"}
-                                            className="inline-flex items-center gap-2 px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 rounded-lg text-sm font-semibold"
-                                        >
-                                            <AlertCircle className="w-4 h-4" />
-                                            Cancelar
-                                        </button>
-                                        <button
-                                            onClick={() => confirmDeleteReturn(selectedReturn)}
-                                            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-lg text-sm font-semibold"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                            Apagar
-                                        </button>
                                     </div>
                                 </div>
 
@@ -1277,7 +1346,9 @@ export default function ReturnsPage() {
                                                         </p>
                                                         <p className="text-xs text-gray-500 mt-0.5">
                                                             {formatDateTime(event.createdAt)}
-                                                            {event.createdByEmail ? ` · ${event.createdByEmail}` : ""}
+                                                            {event.origin === "anymarket_webhook"
+                                                                ? " · AnyMarket"
+                                                                : event.createdByEmail ? ` · ${event.createdByEmail}` : ""}
                                                         </p>
                                                         {event.note && (
                                                             <p className="text-sm text-gray-600 mt-1">{event.note}</p>

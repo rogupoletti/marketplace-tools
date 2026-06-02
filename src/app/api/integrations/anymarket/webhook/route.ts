@@ -5,6 +5,10 @@ import { decryptToken } from "@/server/utils/crypto";
 import { AnymarketClient } from "@/server/integrations/anymarket/anymarket-client";
 import { normalizeOrder } from "@/server/integrations/anymarket/normalize-order";
 import { saveSales } from "@/server/integrations/anymarket/save-sales";
+import {
+    normalizeAnyMarketReturnWebhookPayload,
+    processAnyMarketReturnWebhook,
+} from "@/server/integrations/anymarket/returns-webhook";
 
 export async function POST(request: Request) {
     try {
@@ -16,6 +20,20 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(() => ({}));
+        const returnEvent = normalizeAnyMarketReturnWebhookPayload(body);
+
+        if (returnEvent.isReturnEvent) {
+            const result = await processAnyMarketReturnWebhook(accountId, body);
+            console.log(`[Anymarket Webhook] Devolucao processada para accountId ${accountId}: ${result.processingMessage}`);
+            return NextResponse.json(
+                {
+                    success: result.processingStatus !== "failed",
+                    message: result.processingMessage,
+                    ...result,
+                },
+                { status: result.processingStatus === "failed" ? 422 : result.createdReturn ? 201 : 200 }
+            );
+        }
 
         // A Anymarket pode enviar o ID de algumas formas diferentes dependendo do evento
         const orderId = body.id || body.content?.id || body.order?.id || body.content?.order?.id;
@@ -57,6 +75,19 @@ export async function POST(request: Request) {
 
         if (!order || !order.id) {
             return NextResponse.json({ error: "Order not found or invalid response" }, { status: 404 });
+        }
+
+        if (normalizeAnyMarketReturnWebhookPayload(order).isReturnEvent) {
+            const result = await processAnyMarketReturnWebhook(accountId, order);
+            console.log(`[Anymarket Webhook] Pedido ${orderId} identificado como devolucao e desviado do fluxo de vendas.`);
+            return NextResponse.json(
+                {
+                    success: result.processingStatus !== "failed",
+                    message: result.processingMessage,
+                    ...result,
+                },
+                { status: result.processingStatus === "failed" ? 422 : result.createdReturn ? 201 : 200 }
+            );
         }
 
         // 4. Normalizar o pedido para itens

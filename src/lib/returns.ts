@@ -13,24 +13,38 @@ export const RETURN_STATUSES = [
 export type ReturnChannel = (typeof RETURN_CHANNELS)[number];
 export type ReturnType = (typeof RETURN_TYPES)[number];
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
+export type ReturnSource = "manual" | "anymarket";
+export type ReturnHistoryOrigin = "manual" | "anymarket_webhook";
 
 export type ReturnHistoryAction =
     | "created"
     | "updated"
     | "status_changed"
+    | "webhook_received"
     | "cancelled"
     | "resolved";
 
 export interface MarketplaceReturn {
     id: string;
     accountId: string;
-    source?: "manual";
+    source?: ReturnSource;
     orderNumber: string;
     invoiceNumber?: string;
     customerName: string;
     channel: ReturnChannel;
     returnType: ReturnType;
     status: ReturnStatus;
+    externalReturnId?: string;
+    externalOrderId?: string;
+    marketplaceOrderId?: string;
+    marketplace?: string;
+    anymarketStatus?: string;
+    trackingCode?: string;
+    trackingCarrier?: string;
+    trackingUrl?: string;
+    trackingUpdatedAt?: string;
+    lastWebhookReceivedAt?: string;
+    lastExternalStatusAt?: string;
     returnDate: string;
     expectedArrivalDate?: string;
     notes?: string;
@@ -49,6 +63,8 @@ export interface ReturnHistoryEvent {
     action: ReturnHistoryAction;
     previousStatus?: ReturnStatus;
     newStatus?: ReturnStatus;
+    origin?: ReturnHistoryOrigin;
+    eventLogId?: string;
     note?: string;
     createdAt: string;
     createdByUid?: string;
@@ -85,6 +101,11 @@ export const RETURN_TYPE_LABELS: Record<ReturnType, string> = {
     other: "Outro",
 };
 
+export const RETURN_SOURCE_LABELS: Record<ReturnSource, string> = {
+    manual: "Manual",
+    anymarket: "AnyMarket",
+};
+
 export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
     on_the_way: "A Caminho",
     pending_analysis: "Pendente Análise",
@@ -99,6 +120,7 @@ export const RETURN_HISTORY_ACTION_LABELS: Record<ReturnHistoryAction, string> =
     created: "Devolução criada",
     updated: "Dados atualizados",
     status_changed: "Status alterado",
+    webhook_received: "Webhook recebido",
     cancelled: "Devolução cancelada",
     resolved: "Devolução finalizada",
 };
