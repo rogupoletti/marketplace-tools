@@ -13,7 +13,6 @@ import {
     PackageSearch,
     PanelLeftClose,
     PanelLeftOpen,
-    RotateCcw,
     ShieldCheck,
     Zap,
     type LucideIcon,
@@ -62,7 +61,6 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
 
     const actualCollapsed = isCollapsed && !isHovered;
     const isAdmin = userData?.isAdmin || userData?.role === "superadmin" || userData?.role === "account_admin";
-    const canAccessReturns = userData?.role !== "subaccount_user";
     const actualCalculadorasOpen = isCalculadorasOpen || pathname.includes("/shopee") || pathname.includes("/meli") || pathname.includes("/amazon");
     const actualIntegracoesOpen = isIntegracoesOpen || pathname.includes("/integrations");
     const actualReposFullOpen = isReposFullOpen || pathname.includes("/reposicao-full");
@@ -82,7 +80,6 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                         { name: "Shopee", href: "/reposicao-full/shopee" },
                     ],
                 },
-                ...(canAccessReturns ? [{ name: "Devoluções", href: "/returns", icon: RotateCcw } satisfies NavItem] : []),
                 { name: "Cadastros", href: "/cadastros", icon: LayoutDashboard },
                 { name: "Relatórios", href: "/dash", icon: BarChart3 },
             ],

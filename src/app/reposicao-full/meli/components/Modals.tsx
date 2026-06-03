@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useReposicaoState } from '../useReposicaoState';
+import { useUI } from '@/lib/ui-context';
 import { X } from 'lucide-react';
 
 interface ModalsProps {
@@ -30,6 +31,8 @@ export function Modals({
     onExecuteRemessa
 }: ModalsProps) {
     const { produtosProcessados, overridesGlobais, updateOverride, updateOverridesBulk, selectedSkus, parametros } = useReposicaoState();
+    const { showAlert } = useUI();
+    const [isSaving, setIsSaving] = useState(false);
 
     // Single Edit State
     const [singleAtivo, setSingleAtivo] = useState(true);
@@ -76,21 +79,33 @@ export function Modals({
         }
     }, [bulkEditParams.isOpen]);
 
-    const handleSaveSingle = () => {
+    const handleSaveSingle = async () => {
         if (!editingSku) return;
-        updateOverride(editingSku, {
-            ativo: singleAtivo,
-            motivoInativo: !singleAtivo ? singleMotivo : undefined,
-            diasEstoqueDesejado: singleDias === '' ? undefined : Number(singleDias),
-            tamanhoCaixa: singleCaixa === '' ? undefined : Number(singleCaixa)
-        });
-        onClose();
+        setIsSaving(true);
+        try {
+            await updateOverride(editingSku, {
+                ativo: singleAtivo,
+                motivoInativo: !singleAtivo ? singleMotivo : undefined,
+                diasEstoqueDesejado: singleDias === '' ? undefined : Number(singleDias),
+                tamanhoCaixa: singleCaixa === '' ? undefined : Number(singleCaixa)
+            });
+            onClose();
+        } catch (error) {
+            showAlert("Erro", error instanceof Error ? error.message : "Erro ao salvar produto", "error");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleSaveBulk = () => {
+    const handleSaveBulk = async () => {
         if (selectedSkus.length === 0) return;
 
-        const updates: any = {};
+        const updates: {
+            ativo?: boolean;
+            motivoInativo?: string;
+            diasEstoqueDesejado?: number;
+            tamanhoCaixa?: number;
+        } = {};
         if (bulkAtivo !== null) {
             updates.ativo = bulkAtivo;
             if (!bulkAtivo) updates.motivoInativo = bulkMotivo;
@@ -102,8 +117,15 @@ export function Modals({
             updates.tamanhoCaixa = Number(bulkCaixa);
         } // if bulkDias === '', we don't clear it. Bulk edit usually applies changes, not clear them, unless we add an explicit "Clear" option. Let's keep it simple.
 
-        updateOverridesBulk(selectedSkus, updates);
-        onCloseBulk();
+        setIsSaving(true);
+        try {
+            await updateOverridesBulk(selectedSkus, updates);
+            onCloseBulk();
+        } catch (error) {
+            showAlert("Erro", error instanceof Error ? error.message : "Erro ao salvar produtos", "error");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const prodToEdit = editingSku ? produtosProcessados.find(p => p.sku === editingSku) : null;
@@ -203,8 +225,8 @@ export function Modals({
                             <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
                                 Cancelar
                             </button>
-                            <button onClick={handleSaveSingle} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer">
-                                Salvar Alterações
+                            <button onClick={handleSaveSingle} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
+                                {isSaving ? "Salvando..." : "Salvar Alterações"}
                             </button>
                         </div>
                     </div>
@@ -306,8 +328,8 @@ export function Modals({
                             <button onClick={onCloseBulk} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
                                 Cancelar
                             </button>
-                            <button onClick={handleSaveBulk} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer">
-                                Aplicar em {selectedSkus.length} produtos
+                            <button onClick={handleSaveBulk} disabled={isSaving} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
+                                {isSaving ? "Salvando..." : `Aplicar em ${selectedSkus.length} produtos`}
                             </button>
                         </div>
                     </div>

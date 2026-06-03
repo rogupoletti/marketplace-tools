@@ -14,6 +14,7 @@ export interface ProdutoRaw {
     emTransf?: number;
     inativo?: boolean;
     motivoInativo?: string;
+    marketplaceConfig?: MarketplaceConfig;
 }
 
 export interface VendaRaw {
@@ -46,6 +47,18 @@ export interface UserOverrides {
     inativoDesde?: string; // ISO string 
     diasEstoqueDesejado?: number;
     tamanhoCaixa?: number;
+}
+
+export interface MarketplaceItemConfig {
+    ativo: boolean;
+    motivoInativo?: MotivoInativo | string;
+    inativoDesde?: string;
+    diasEstoqueDesejado?: number;
+}
+
+export interface MarketplaceConfig {
+    mercadolivre: MarketplaceItemConfig;
+    shopee: MarketplaceItemConfig;
 }
 
 export interface ProdutoProcessado extends ProdutoRaw {

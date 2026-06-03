@@ -25,8 +25,8 @@ interface ReposicaoContextData {
     fetchVendasAnymarket: () => Promise<void>;
     setParametros: (p: Partial<ParametrosGlobais>) => void;
     setFiltros: (f: Partial<Filtros>) => void;
-    updateOverride: (sku: string, o: Partial<UserOverrides>) => void;
-    updateOverridesBulk: (skus: string[], o: Partial<UserOverrides>) => void;
+    updateOverride: (sku: string, o: Partial<UserOverrides>) => Promise<void>;
+    updateOverridesBulk: (skus: string[], o: Partial<UserOverrides>) => Promise<void>;
     recalcularAgora: () => void;
     limparDados: () => void;
     limparTransito: () => void;
@@ -43,6 +43,15 @@ interface ReposicaoContextData {
 }
 
 const ReposicaoContext = createContext<ReposicaoContextData>({} as ReposicaoContextData);
+
+interface SaleApiItem {
+    marketplace?: string;
+    sku?: string;
+    date?: string;
+    vendaQtd?: number;
+    vendaValorLiquido?: number;
+    vendaValorBruto?: number;
+}
 
 const DEFAULT_PARAMS: ParametrosGlobais = {
     diasEstoquePadrao: 30,
@@ -79,6 +88,23 @@ function ensureEanColumn(cols: unknown): string[] {
     return visibleColumns;
 }
 
+function getShopeeOverride(prod: ProdutoRaw): UserOverrides {
+    const config = prod.marketplaceConfig?.shopee;
+    return {
+        ativo: config?.ativo !== false,
+        motivoInativo: config?.motivoInativo,
+        inativoDesde: config?.inativoDesde,
+        diasEstoqueDesejado: config?.diasEstoqueDesejado,
+    };
+}
+
+function buildOverridesFromProducts(products: ProdutoRaw[]) {
+    return products.reduce<Record<string, UserOverrides>>((acc, prod) => {
+        acc[prod.sku] = getShopeeOverride(prod);
+        return acc;
+    }, {});
+}
+
 export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const { user } = useAuth();
     const [isLoaded, setIsLoaded] = useState(false);
@@ -105,7 +131,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 if (data.produtosRaw) setProdutosRawState(data.produtosRaw);
                 // vendasRaw is no longer stored in localStorage due to size limits
                 if (data.parametros) setParametrosState(data.parametros);
-                if (data.overridesGlobais) setOverridesGlobaisState(data.overridesGlobais);
                 if (data.lastUpdate) setLastUpdate(new Date(data.lastUpdate));
                 if (data.colunasVisiveis) setColunasVisiveisState(ensureEanColumn(data.colunasVisiveis));
                 if (data.agendamentoMap) {
@@ -139,7 +164,6 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 produtosRaw,
                 // vendasRaw is excluded because it's too large for localStorage
                 parametros,
-                overridesGlobais,
                 lastUpdate: now.toISOString(),
                 colunasVisiveis: ensureEanColumn(colunasVisiveis),
                 agendamentoMap,
@@ -148,7 +172,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         } catch (e) {
             console.error("Failed to save state to localStorage (likely quota exceeded)", e);
         }
-    }, [produtosRaw, vendasRaw, parametros, overridesGlobais, colunasVisiveis, agendamentoMap, hasEstoqueShopee, isLoaded]);
+    }, [produtosRaw, vendasRaw, parametros, colunasVisiveis, agendamentoMap, hasEstoqueShopee, isLoaded]);
 
     // Auto-fetch data from DB when user is logged in
     useEffect(() => {
@@ -170,7 +194,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         if (!user) return;
         try {
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/reposicao-full/products", {
+            const res = await fetch("/api/cadastros/products", {
                 headers: { "Authorization": `Bearer ${idToken}` }
             });
             const data = await res.json();
@@ -179,6 +203,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             if (data.products && Array.isArray(data.products)) {
                 console.log(`[ReposicaoState] Loaded ${data.products.length} products from DB`);
                 setProdutosRawState(data.products);
+                setOverridesGlobaisState(buildOverridesFromProducts(data.products));
             } else {
                 console.warn("[ReposicaoState] API returned success but products array is missing or empty", data);
             }
@@ -201,9 +226,9 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             if (!res.ok) throw new Error(data.error || "Erro ao buscar vendas");
 
             const novasVendas: Record<string, VendaRaw[]> = {};
-            const sales = data.sales || [];
+            const sales = (data.sales || []) as SaleApiItem[];
 
-            sales.forEach((sale: any) => {
+            sales.forEach((sale) => {
                 // User feedback: check specifically for "SHOPEE"
                 const marketplace = (sale.marketplace || "").toUpperCase();
                 const isShopee = marketplace === "SHOPEE";
@@ -217,8 +242,8 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 }
 
                 novasVendas[sku].push({
-                    sku: sale.sku,
-                    data: sale.date,
+                    sku,
+                    data: sale.date || "",
                     vendaQtd: sale.vendaQtd || 0,
                     vendaValorLiquido: sale.vendaValorLiquido || 0,
                     vendaValorBruto: sale.vendaValorBruto || 0,
@@ -237,34 +262,117 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         setParametrosState(prev => ({ ...prev, ...p }));
     };
 
-    const updateOverride = (sku: string, o: Partial<UserOverrides>) => {
-        setOverridesGlobaisState(prev => {
-            const newOverrides = { ...prev };
-            newOverrides[sku] = { ...(newOverrides[sku] || { ativo: true }), ...o };
-            if (o.ativo === false && !newOverrides[sku].inativoDesde) {
-                newOverrides[sku].inativoDesde = new Date().toISOString();
-            } else if (o.ativo === true) {
-                delete newOverrides[sku].inativoDesde;
-                delete newOverrides[sku].motivoInativo;
-            }
-            return newOverrides;
-        });
+    const updateOverride = async (sku: string, o: Partial<UserOverrides>) => {
+        const current = overridesGlobais[sku] || { ativo: true };
+        const next: UserOverrides = { ...current, ...o };
+        if (o.ativo === false && !next.inativoDesde) {
+            next.inativoDesde = new Date().toISOString();
+        } else if (o.ativo === true) {
+            delete next.inativoDesde;
+            delete next.motivoInativo;
+        }
+
+        if (user) {
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/cadastros/products", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                    sku,
+                    tamanhoCaixa: o.tamanhoCaixa,
+                    marketplaceConfig: {
+                        shopee: {
+                            ativo: next.ativo,
+                            motivoInativo: next.motivoInativo,
+                            inativoDesde: next.inativoDesde,
+                            diasEstoqueDesejado: next.diasEstoqueDesejado ?? null,
+                        },
+                    },
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao atualizar produto");
+        }
+
+        setOverridesGlobaisState(prev => ({ ...prev, [sku]: next }));
+        setProdutosRawState(prev => prev.map(prod => prod.sku === sku ? {
+            ...prod,
+            tamanhoCaixa: o.tamanhoCaixa !== undefined ? Number(o.tamanhoCaixa) : prod.tamanhoCaixa,
+            marketplaceConfig: {
+                mercadolivre: prod.marketplaceConfig?.mercadolivre || { ativo: true },
+                shopee: next,
+            },
+        } : prod));
     };
 
-    const updateOverridesBulk = (skus: string[], o: Partial<UserOverrides>) => {
+    const updateOverridesBulk = async (skus: string[], o: Partial<UserOverrides>) => {
+        const now = new Date().toISOString();
+        const updates = skus.map(sku => {
+            const current = overridesGlobais[sku] || { ativo: true };
+            const next: UserOverrides = { ...current, ...o };
+            if (o.ativo === false && !next.inativoDesde) {
+                next.inativoDesde = now;
+            } else if (o.ativo === true) {
+                delete next.inativoDesde;
+                delete next.motivoInativo;
+            }
+            return {
+                sku,
+                tamanhoCaixa: o.tamanhoCaixa,
+                marketplaceConfig: {
+                    shopee: {
+                        ativo: next.ativo,
+                        motivoInativo: next.motivoInativo,
+                        inativoDesde: next.inativoDesde,
+                        diasEstoqueDesejado: o.diasEstoqueDesejado !== undefined ? next.diasEstoqueDesejado : undefined,
+                    },
+                },
+                __next: next,
+            };
+        });
+
+        if (user) {
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/cadastros/products", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                    items: updates.map((update) => ({
+                        sku: update.sku,
+                        tamanhoCaixa: update.tamanhoCaixa,
+                        marketplaceConfig: update.marketplaceConfig,
+                    })),
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao atualizar produtos");
+        }
+
         setOverridesGlobaisState(prev => {
             const newOverrides = { ...prev };
-            skus.forEach(sku => {
-                newOverrides[sku] = { ...(newOverrides[sku] || { ativo: true }), ...o };
-                if (o.ativo === false && !newOverrides[sku].inativoDesde) {
-                    newOverrides[sku].inativoDesde = new Date().toISOString();
-                } else if (o.ativo === true) {
-                    delete newOverrides[sku].inativoDesde;
-                    delete newOverrides[sku].motivoInativo;
-                }
+            updates.forEach(update => {
+                newOverrides[update.sku] = update.__next;
             });
             return newOverrides;
         });
+        setProdutosRawState(prev => prev.map(prod => {
+            const update = updates.find(item => item.sku === prod.sku);
+            if (!update) return prod;
+            return {
+                ...prod,
+                tamanhoCaixa: o.tamanhoCaixa !== undefined ? Number(o.tamanhoCaixa) : prod.tamanhoCaixa,
+                marketplaceConfig: {
+                    mercadolivre: prod.marketplaceConfig?.mercadolivre || { ativo: true },
+                    shopee: update.__next,
+                },
+            };
+        }));
     };
 
     const recalcularAgora = () => {
@@ -304,7 +412,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         const processed = produtosRaw.map(prod => {
             const sku = prod.sku;
             const vendas = vendasRaw[sku] || [];
-            const overrides = overridesGlobais[sku] || { ativo: true };
+            const overrides = getShopeeOverride(prod);
 
             const shopeeItemId = String(prod.shopeeItemId || "").trim();
             let qtdeMaxPermitida: number | undefined = undefined;
@@ -370,7 +478,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             curvaABCFornecedor: abcMapSupplier[p.sku] || "Z"
         }));
 
-    }, [produtosRaw, vendasRaw, parametros, overridesGlobais, maxSalesDate, agendamentoMap, hasAgendamento]);
+    }, [produtosRaw, vendasRaw, parametros, maxSalesDate, agendamentoMap, hasAgendamento]);
 
     const produtosFiltrados = useMemo(() => {
         return produtosProcessados.filter(item => {

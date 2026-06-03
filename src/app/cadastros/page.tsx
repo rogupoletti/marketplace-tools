@@ -4,9 +4,23 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useUI } from "@/lib/ui-context";
-import { Search, Package, ChevronLeft, ChevronRight, Upload, Download } from "lucide-react";
+import { Search, Package, ChevronLeft, ChevronRight, Upload, Download, Pencil, X } from "lucide-react";
 import { utils, writeFile } from "xlsx";
 import { parseCadastrosExcel } from "@/app/reposicao-full/excel-utils";
+
+type MarketplaceKey = "mercadolivre" | "shopee";
+
+interface MarketplaceItemConfig {
+    ativo: boolean;
+    motivoInativo?: string;
+    inativoDesde?: string;
+    diasEstoqueDesejado?: number;
+}
+
+interface MarketplaceConfig {
+    mercadolivre: MarketplaceItemConfig;
+    shopee: MarketplaceItemConfig;
+}
 
 interface Produto {
     sku: string;
@@ -14,11 +28,17 @@ interface Produto {
     descricao: string;
     mlb: string;
     mlbCatalogo: string;
+    shopeeItemId: string;
+    shopeeModelId: string;
     marca: string;
     fornecedor: string;
+    estoqueFull: number;
     estoqueEmpresa: number;
+    precoAtual: number;
+    custoAtual: number;
     tamanhoCaixa: number;
     emTransf: number;
+    marketplaceConfig: MarketplaceConfig;
 }
 
 interface CadastroUpdate {
@@ -41,6 +61,44 @@ interface ProductsResult {
 }
 
 const PAGE_SIZE = 25;
+const MOTIVOS_INATIVO = ["Baixo Giro", "Fora de Linha", "Bloqueado Indústria", "Bloqueado Marketplace"];
+
+function getDefaultMarketplaceConfig(): MarketplaceConfig {
+    return {
+        mercadolivre: { ativo: true },
+        shopee: { ativo: true },
+    };
+}
+
+function normalizeProductForEdit(produto: Produto): Produto {
+    return {
+        ...produto,
+        shopeeItemId: produto.shopeeItemId || "",
+        shopeeModelId: produto.shopeeModelId || "",
+        estoqueFull: Number(produto.estoqueFull) || 0,
+        estoqueEmpresa: Number(produto.estoqueEmpresa) || 0,
+        precoAtual: Number(produto.precoAtual) || 0,
+        custoAtual: Number(produto.custoAtual) || 0,
+        tamanhoCaixa: Number(produto.tamanhoCaixa) || 1,
+        emTransf: Number(produto.emTransf) || 0,
+        marketplaceConfig: {
+            ...getDefaultMarketplaceConfig(),
+            ...(produto.marketplaceConfig || {}),
+            mercadolivre: {
+                ativo: produto.marketplaceConfig?.mercadolivre?.ativo !== false,
+                motivoInativo: produto.marketplaceConfig?.mercadolivre?.motivoInativo || "",
+                inativoDesde: produto.marketplaceConfig?.mercadolivre?.inativoDesde,
+                diasEstoqueDesejado: produto.marketplaceConfig?.mercadolivre?.diasEstoqueDesejado,
+            },
+            shopee: {
+                ativo: produto.marketplaceConfig?.shopee?.ativo !== false,
+                motivoInativo: produto.marketplaceConfig?.shopee?.motivoInativo || "",
+                inativoDesde: produto.marketplaceConfig?.shopee?.inativoDesde,
+                diasEstoqueDesejado: produto.marketplaceConfig?.shopee?.diasEstoqueDesejado,
+            },
+        },
+    };
+}
 
 export default function CadastrosPage() {
     const { user, loading } = useAuth();
@@ -52,6 +110,8 @@ export default function CadastrosPage() {
     const [busca, setBusca] = useState("");
     const [page, setPage] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Produto | null>(null);
+    const [isSavingProduct, setIsSavingProduct] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -67,7 +127,7 @@ export default function CadastrosPage() {
             setIsLoading(true);
             try {
                 const token = await user.getIdToken();
-                const res = await fetch("/api/reposicao-full/products", {
+                const res = await fetch("/api/cadastros/products", {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
                 const result = await res.json() as ProductsResult;
@@ -77,7 +137,7 @@ export default function CadastrosPage() {
                 }
 
                 if (Array.isArray(result.products)) {
-                    setProdutos(result.products);
+                    setProdutos(result.products.map(normalizeProductForEdit));
                     setIsLoading(false);
                     return;
                 }
@@ -90,7 +150,7 @@ export default function CadastrosPage() {
                 if (stored) {
                     const data = JSON.parse(stored) as { produtosRaw?: Produto[] };
                     if (data.produtosRaw && Array.isArray(data.produtosRaw)) {
-                        setProdutos(data.produtosRaw);
+                        setProdutos(data.produtosRaw.map(normalizeProductForEdit));
                     }
                 }
             } catch (e) {
@@ -149,13 +209,24 @@ export default function CadastrosPage() {
             } else {
                 showAlert("Sucesso", `${totalUpdated} produtos atualizados com sucesso! (De ${totalEncontrados} encontrados no sistema)`, "success");
             }
+
+            const dataMap = new Map<string, CadastroUpdate>(data.map((d) => [d.sku, d]));
+            setProdutos((prev) => prev.map((p) => {
+                const newData = dataMap.get(p.sku);
+                if (!newData) return p;
+                return {
+                    ...p,
+                    marca: newData.marca !== undefined ? newData.marca : p.marca,
+                    fornecedor: newData.fornecedor !== undefined ? newData.fornecedor : p.fornecedor,
+                    tamanhoCaixa: newData.tamanhoCaixa !== undefined ? newData.tamanhoCaixa : p.tamanhoCaixa
+                };
+            }));
             
             // Update local state and localStorage for immediate feedback
             const stored = localStorage.getItem("@SellerDock:ReposicaoFull");
             if (stored) {
                 const parsedStored = JSON.parse(stored) as { produtosRaw?: Produto[] };
                 if (parsedStored.produtosRaw && Array.isArray(parsedStored.produtosRaw)) {
-                    const dataMap = new Map<string, CadastroUpdate>(data.map((d) => [d.sku, d]));
                     const updatedProdutos = parsedStored.produtosRaw.map((p) => {
                         const newData = dataMap.get(p.sku);
                         if (newData) {
@@ -183,6 +254,81 @@ export default function CadastrosPage() {
         }
     };
 
+    const updateEditingProduct = (updates: Partial<Produto>) => {
+        setEditingProduct((prev) => prev ? { ...prev, ...updates } : prev);
+    };
+
+    const updateMarketplaceConfig = (marketplace: MarketplaceKey, updates: Partial<MarketplaceItemConfig>) => {
+        setEditingProduct((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                marketplaceConfig: {
+                    ...prev.marketplaceConfig,
+                    [marketplace]: {
+                        ...prev.marketplaceConfig[marketplace],
+                        ...updates,
+                    },
+                },
+            };
+        });
+    };
+
+    const handleSaveProduct = async () => {
+        if (!editingProduct || !user) return;
+
+        setIsSavingProduct(true);
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch("/api/cadastros/products", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    sku: editingProduct.sku,
+                    ean: editingProduct.ean,
+                    descricao: editingProduct.descricao,
+                    mlb: editingProduct.mlb,
+                    mlbCatalogo: editingProduct.mlbCatalogo,
+                    shopeeItemId: editingProduct.shopeeItemId,
+                    shopeeModelId: editingProduct.shopeeModelId,
+                    marca: editingProduct.marca,
+                    fornecedor: editingProduct.fornecedor,
+                    estoqueFull: editingProduct.estoqueFull,
+                    estoqueEmpresa: editingProduct.estoqueEmpresa,
+                    precoAtual: editingProduct.precoAtual,
+                    custoAtual: editingProduct.custoAtual,
+                    tamanhoCaixa: editingProduct.tamanhoCaixa,
+                    emTransf: editingProduct.emTransf,
+                    marketplaceConfig: {
+                        mercadolivre: {
+                            ...editingProduct.marketplaceConfig.mercadolivre,
+                            diasEstoqueDesejado: editingProduct.marketplaceConfig.mercadolivre.diasEstoqueDesejado ?? null,
+                        },
+                        shopee: {
+                            ...editingProduct.marketplaceConfig.shopee,
+                            diasEstoqueDesejado: editingProduct.marketplaceConfig.shopee.diasEstoqueDesejado ?? null,
+                        },
+                    },
+                }),
+            });
+
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || "Erro ao salvar produto");
+
+            const normalized = normalizeProductForEdit(editingProduct);
+            setProdutos((prev) => prev.map((p) => p.sku === normalized.sku ? normalized : p));
+            setEditingProduct(null);
+            showAlert("Sucesso", "Produto atualizado com sucesso.", "success");
+        } catch (error) {
+            showAlert("Erro", error instanceof Error ? error.message : "Erro ao salvar produto", "error");
+        } finally {
+            setIsSavingProduct(false);
+        }
+    };
+
     const filtered = useMemo(() => {
         if (!busca.trim()) return produtos;
         const q = busca.toLowerCase();
@@ -191,6 +337,8 @@ export default function CadastrosPage() {
             (p.ean || "").toLowerCase().includes(q) ||
             p.descricao.toLowerCase().includes(q) ||
             (p.mlb || "").toLowerCase().includes(q) ||
+            (p.shopeeItemId || "").toLowerCase().includes(q) ||
+            (p.shopeeModelId || "").toLowerCase().includes(q) ||
             (p.fornecedor || "").toLowerCase().includes(q) ||
             (p.marca || "").toLowerCase().includes(q)
         );
@@ -208,11 +356,22 @@ export default function CadastrosPage() {
             "Descricao": p.descricao,
             "MLB": p.mlb || "",
             "MLB Catalogo": p.mlbCatalogo || "",
+            "Shopee Item ID": p.shopeeItemId || "",
+            "Shopee Model ID": p.shopeeModelId || "",
             "Marca": p.marca || "",
             "Fornecedor": p.fornecedor || "",
+            "Estoque Full": p.estoqueFull ?? 0,
             "Estoque Empresa": p.estoqueEmpresa ?? 0,
+            "Preco Atual": p.precoAtual ?? 0,
+            "Custo Atual": p.custoAtual ?? 0,
             "Tamanho Caixa": p.tamanhoCaixa ?? 0,
             "Em Transferencia": p.emTransf ?? 0,
+            "Status Mercado Livre": p.marketplaceConfig.mercadolivre.ativo ? "Ativo" : "Inativo",
+            "Motivo ML": p.marketplaceConfig.mercadolivre.motivoInativo || "",
+            "Dias Desejados ML": p.marketplaceConfig.mercadolivre.diasEstoqueDesejado ?? "",
+            "Status Shopee": p.marketplaceConfig.shopee.ativo ? "Ativo" : "Inativo",
+            "Motivo Shopee": p.marketplaceConfig.shopee.motivoInativo || "",
+            "Dias Desejados Shopee": p.marketplaceConfig.shopee.diasEstoqueDesejado ?? "",
         }));
 
         const ws = utils.json_to_sheet(exportData);
@@ -336,8 +495,11 @@ export default function CadastrosPage() {
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">MLB Catálogo</th>
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Marca</th>
                                         <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Fornecedor</th>
+                                        <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">ML</th>
+                                        <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Shopee</th>
                                         <th className="text-right px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Est. Empresa</th>
                                         <th className="text-right px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Tam. Caixa</th>
+                                        <th className="text-right px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -350,8 +512,27 @@ export default function CadastrosPage() {
                                             <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.mlbCatalogo || "—"}</td>
                                             <td className="px-4 py-3 text-gray-600">{p.marca || "—"}</td>
                                             <td className="px-4 py-3 text-gray-600">{p.fornecedor || "—"}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-1 rounded text-[11px] font-semibold ${p.marketplaceConfig.mercadolivre.ativo ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                                    {p.marketplaceConfig.mercadolivre.ativo ? "Ativo" : "Inativo"}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-1 rounded text-[11px] font-semibold ${p.marketplaceConfig.shopee.ativo ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                                    {p.marketplaceConfig.shopee.ativo ? "Ativo" : "Inativo"}
+                                                </span>
+                                            </td>
                                             <td className="px-4 py-3 text-right font-medium text-gray-800">{p.estoqueEmpresa}</td>
                                             <td className="px-4 py-3 text-right font-medium text-gray-800">{p.tamanhoCaixa}</td>
+                                            <td className="px-4 py-3 text-right">
+                                                <button
+                                                    onClick={() => setEditingProduct(normalizeProductForEdit(p))}
+                                                    title="Editar produto"
+                                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-[#2d3277] hover:bg-[#2d3277]/10 transition-colors cursor-pointer"
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -388,6 +569,157 @@ export default function CadastrosPage() {
                     </>
                 )}
             </div>
+
+            {editingProduct && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">Editar Produto</h3>
+                                <p className="text-xs font-mono text-[#2d3277] mt-1">{editingProduct.sku}</p>
+                            </div>
+                            <button onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors cursor-pointer">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto space-y-6">
+                            <section>
+                                <h4 className="text-sm font-bold text-gray-900 mb-3">Dados Gerais</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">EAN</span>
+                                        <input value={editingProduct.ean || ""} onChange={(e) => updateEditingProduct({ ean: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block md:col-span-2">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</span>
+                                        <input value={editingProduct.descricao || ""} onChange={(e) => updateEditingProduct({ descricao: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">MLB</span>
+                                        <input value={editingProduct.mlb || ""} onChange={(e) => updateEditingProduct({ mlb: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">MLB Catálogo</span>
+                                        <input value={editingProduct.mlbCatalogo || ""} onChange={(e) => updateEditingProduct({ mlbCatalogo: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Shopee Item ID</span>
+                                        <input value={editingProduct.shopeeItemId || ""} onChange={(e) => updateEditingProduct({ shopeeItemId: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Shopee Model ID</span>
+                                        <input value={editingProduct.shopeeModelId || ""} onChange={(e) => updateEditingProduct({ shopeeModelId: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Marca</span>
+                                        <input value={editingProduct.marca || ""} onChange={(e) => updateEditingProduct({ marca: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Fornecedor</span>
+                                        <input value={editingProduct.fornecedor || ""} onChange={(e) => updateEditingProduct({ fornecedor: e.target.value })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h4 className="text-sm font-bold text-gray-900 mb-3">Estoque e Valores</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Est. Full</span>
+                                        <input type="number" value={editingProduct.estoqueFull} onChange={(e) => updateEditingProduct({ estoqueFull: Number(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Est. Empresa</span>
+                                        <input type="number" value={editingProduct.estoqueEmpresa} onChange={(e) => updateEditingProduct({ estoqueEmpresa: Number(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Em Transferência</span>
+                                        <input type="number" value={editingProduct.emTransf} onChange={(e) => updateEditingProduct({ emTransf: Number(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Tam. Caixa</span>
+                                        <input type="number" min="1" value={editingProduct.tamanhoCaixa} onChange={(e) => updateEditingProduct({ tamanhoCaixa: Math.max(1, Number(e.target.value) || 1) })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Preço Atual</span>
+                                        <input type="number" step="0.01" value={editingProduct.precoAtual} onChange={(e) => updateEditingProduct({ precoAtual: Number(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Custo Atual</span>
+                                        <input type="number" step="0.01" value={editingProduct.custoAtual} onChange={(e) => updateEditingProduct({ custoAtual: Number(e.target.value) || 0 })} className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm" />
+                                    </label>
+                                </div>
+                            </section>
+
+                            <section>
+                                <h4 className="text-sm font-bold text-gray-900 mb-3">Configurações por Plataforma</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {(["mercadolivre", "shopee"] as MarketplaceKey[]).map((marketplace) => {
+                                        const config = editingProduct.marketplaceConfig[marketplace];
+                                        const title = marketplace === "mercadolivre" ? "Mercado Livre" : "Shopee";
+                                        return (
+                                            <div key={marketplace} className="border border-gray-100 rounded-lg p-4">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h5 className="text-sm font-bold text-gray-800">{title}</h5>
+                                                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={config.ativo}
+                                                            onChange={(e) => updateMarketplaceConfig(marketplace, {
+                                                                ativo: e.target.checked,
+                                                                motivoInativo: e.target.checked ? "" : config.motivoInativo,
+                                                                inativoDesde: e.target.checked ? undefined : (config.inativoDesde || new Date().toISOString()),
+                                                            })}
+                                                            className="w-4 h-4 text-[#2d3277] border-gray-300 rounded"
+                                                        />
+                                                        Ativo
+                                                    </label>
+                                                </div>
+                                                {!config.ativo && (
+                                                    <label className="block mb-4">
+                                                        <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Motivo da Inativação</span>
+                                                        <select
+                                                            value={config.motivoInativo || ""}
+                                                            onChange={(e) => updateMarketplaceConfig(marketplace, { motivoInativo: e.target.value })}
+                                                            className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm"
+                                                        >
+                                                            <option value="">-- Selecione o motivo --</option>
+                                                            {MOTIVOS_INATIVO.map((motivo) => (
+                                                                <option key={motivo} value={motivo}>{motivo}</option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                )}
+                                                <label className="block">
+                                                    <span className="block text-xs font-bold text-gray-500 uppercase mb-1">Dias de Estoque Desejado</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        placeholder="Usar padrão global"
+                                                        value={config.diasEstoqueDesejado ?? ""}
+                                                        onChange={(e) => updateMarketplaceConfig(marketplace, { diasEstoqueDesejado: e.target.value === "" ? undefined : Number(e.target.value) })}
+                                                        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm"
+                                                    />
+                                                </label>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        </div>
+
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                            <button onClick={() => setEditingProduct(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                Cancelar
+                            </button>
+                            <button onClick={handleSaveProduct} disabled={isSavingProduct} className="px-4 py-2 text-sm font-medium text-white bg-[#2d3277] rounded-lg hover:bg-[#2d3277]/90 transition-colors shadow-sm cursor-pointer disabled:opacity-50">
+                                {isSavingProduct ? "Salvando..." : "Salvar Alterações"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
