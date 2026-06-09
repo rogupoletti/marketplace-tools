@@ -10,6 +10,9 @@ import {
     ReturnType,
     RETURN_STATUS_LABELS,
 } from "@/lib/returns";
+import { decryptToken } from "@/server/utils/crypto";
+import { AnymarketClient } from "./anymarket-client";
+import { AnymarketIntegrationStatus } from "./anymarket-types";
 
 type ProcessingStatus = "received" | "processed" | "ignored" | "failed";
 
@@ -138,6 +141,162 @@ function firstTimestamp(payload: unknown, paths: string[]): string | undefined {
     return undefined;
 }
 
+function mergeEventDetails(
+    event: NormalizedAnyMarketReturnEvent,
+    details: Partial<NormalizedAnyMarketReturnEvent>
+): NormalizedAnyMarketReturnEvent {
+    return {
+        ...event,
+        externalOrderId: event.externalOrderId || details.externalOrderId,
+        marketplaceOrderId: event.marketplaceOrderId || details.marketplaceOrderId,
+        orderNumber: event.orderNumber || details.orderNumber,
+        invoiceNumber: event.invoiceNumber || details.invoiceNumber,
+        customerName: event.customerName || details.customerName,
+        marketplace: event.marketplace || details.marketplace,
+        anymarketStatus: event.anymarketStatus || details.anymarketStatus,
+        trackingCode: event.trackingCode || details.trackingCode,
+        trackingCarrier: event.trackingCarrier || details.trackingCarrier,
+        trackingUrl: event.trackingUrl || details.trackingUrl,
+        eventTimestamp: event.eventTimestamp || details.eventTimestamp,
+    };
+}
+
+function normalizeAnyMarketOrderDetails(order: unknown): Partial<NormalizedAnyMarketReturnEvent> {
+    return {
+        externalOrderId: firstString(order, [
+            "id",
+            "orderId",
+            "anymarketOrderId",
+            "idOrder",
+            "order.id",
+            "content.id",
+            "content.order.id",
+        ]),
+        marketplaceOrderId: firstString(order, [
+            "marketPlaceNumber",
+            "marketplaceNumber",
+            "marketplaceOrderId",
+            "marketPlaceOrderId",
+            "marketplace.id",
+            "order.marketPlaceNumber",
+            "order.marketplaceOrderId",
+            "content.marketPlaceNumber",
+            "content.marketplaceOrderId",
+        ]),
+        orderNumber: firstString(order, [
+            "marketPlaceNumber",
+            "marketplaceNumber",
+            "orderNumber",
+            "number",
+            "id",
+            "order.orderNumber",
+            "order.number",
+            "order.id",
+            "content.orderNumber",
+            "content.number",
+            "content.id",
+        ]),
+        invoiceNumber: firstString(order, [
+            "invoiceNumber",
+            "invoice.number",
+            "invoice.nfeNumber",
+            "invoice.nfNumber",
+            "invoices.0.number",
+            "invoices.0.nfeNumber",
+            "invoices.0.nfNumber",
+            "nfe.number",
+            "nfe.nfeNumber",
+            "nfe.invoiceNumber",
+            "nf.number",
+            "nf.numero",
+            "notaFiscal.numero",
+            "notaFiscal.number",
+            "order.invoiceNumber",
+            "order.invoice.number",
+            "content.invoiceNumber",
+            "content.invoice.number",
+        ]),
+        customerName: firstString(order, [
+            "customerName",
+            "buyer.name",
+            "buyer.fullName",
+            "buyer.nickname",
+            "customer.name",
+            "customer.fullName",
+            "client.name",
+            "billingAddress.name",
+            "billingAddress.receiverName",
+            "shippingAddress.name",
+            "shippingAddress.receiverName",
+            "deliveryAddress.name",
+            "deliveryAddress.receiverName",
+            "receiverName",
+            "order.buyer.name",
+            "order.customer.name",
+            "content.buyer.name",
+            "content.customer.name",
+        ]),
+        marketplace: firstString(order, [
+            "marketPlace",
+            "marketplace",
+            "marketPlace.name",
+            "marketplace.name",
+            "marketPlaceId",
+            "marketplaceId",
+            "channel",
+            "accountName",
+            "order.marketPlace",
+            "order.marketplace",
+            "content.marketPlace",
+            "content.marketplace",
+        ]),
+        anymarketStatus: firstString(order, [
+            "status",
+            "status.name",
+            "status.description",
+            "order.status",
+            "order.status.name",
+            "content.status",
+            "content.status.name",
+        ]),
+        trackingCode: firstString(order, [
+            "trackingCode",
+            "trackingNumber",
+            "tracking.number",
+            "tracking.code",
+            "shipping.trackingCode",
+            "shipping.trackingNumber",
+            "content.trackingCode",
+            "content.trackingNumber",
+        ]),
+        trackingCarrier: firstString(order, [
+            "trackingCarrier",
+            "carrier",
+            "tracking.carrier",
+            "shipping.carrier",
+            "shipping.carrierName",
+            "content.trackingCarrier",
+            "content.carrier",
+        ]),
+        trackingUrl: firstString(order, [
+            "trackingUrl",
+            "tracking.url",
+            "shipping.trackingUrl",
+            "content.trackingUrl",
+            "content.tracking.url",
+        ]),
+        eventTimestamp: firstTimestamp(order, [
+            "updatedAt",
+            "createdAt",
+            "paymentDate",
+            "invoice.date",
+            "invoice.createdAt",
+            "content.updatedAt",
+            "content.createdAt",
+        ]),
+    };
+}
+
 function stableStringify(value: unknown): string {
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -256,30 +415,68 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
     const invoiceNumber = firstString(payload, [
         "invoiceNumber",
         "invoice.number",
+        "invoice.nfeNumber",
+        "invoice.nfNumber",
+        "invoices.0.number",
+        "invoices.0.nfeNumber",
+        "invoices.0.nfNumber",
         "nfe.number",
+        "nfe.nfeNumber",
+        "nfe.invoiceNumber",
+        "nf.number",
+        "nf.numero",
+        "notaFiscal.numero",
+        "notaFiscal.number",
+        "order.invoiceNumber",
+        "order.invoice.number",
         "content.invoiceNumber",
         "content.invoice.number",
+        "content.invoice.nfeNumber",
+        "content.invoice.nfNumber",
         "content.nfe.number",
     ]);
     const customerName = firstString(payload, [
         "customerName",
         "customer.name",
+        "customer.fullName",
         "buyer.name",
+        "buyer.fullName",
+        "buyer.nickname",
         "client.name",
+        "billingAddress.name",
+        "billingAddress.receiverName",
+        "shippingAddress.name",
+        "shippingAddress.receiverName",
+        "deliveryAddress.name",
+        "deliveryAddress.receiverName",
+        "receiverName",
         "order.customer.name",
+        "order.buyer.name",
         "content.customerName",
         "content.customer.name",
+        "content.customer.fullName",
         "content.buyer.name",
+        "content.buyer.fullName",
         "content.order.customer.name",
+        "content.order.buyer.name",
     ]);
     const marketplace = firstString(payload, [
         "marketplace",
         "marketPlace",
+        "marketPlace.name",
+        "marketplace.name",
+        "marketPlaceId",
+        "marketplaceId",
         "channel",
         "canal",
+        "accountName",
         "order.marketPlace",
+        "order.marketplace",
+        "order.marketPlace.name",
         "content.marketplace",
         "content.marketPlace",
+        "content.marketPlace.name",
+        "content.marketPlaceId",
         "content.channel",
         "content.order.marketPlace",
     ]);
@@ -434,6 +631,59 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
     };
 }
 
+async function getAnyMarketClient(accountId: string): Promise<AnymarketClient | null> {
+    const integrationRef = adminDb.collection("accounts").doc(accountId).collection("integrations").doc("anymarket");
+    const doc = await integrationRef.get();
+    if (!doc.exists) return null;
+
+    const config = doc.data() as Partial<AnymarketIntegrationStatus>;
+    if (!config.enabled || !config.encryptedToken || !config.tokenIv || !config.tokenAuthTag) return null;
+
+    const token = decryptToken(config.encryptedToken, config.tokenIv, config.tokenAuthTag);
+    return new AnymarketClient(token);
+}
+
+async function enrichReturnEventFromOrder(
+    accountId: string,
+    event: NormalizedAnyMarketReturnEvent
+): Promise<NormalizedAnyMarketReturnEvent> {
+    const candidateIds = [
+        event.externalOrderId,
+        event.orderNumber,
+        event.marketplaceOrderId,
+        event.externalReturnId,
+    ]
+        .map((value) => cleanString(value))
+        .filter((value): value is string => Boolean(value));
+    const uniqueCandidateIds = [...new Set(candidateIds)];
+
+    if (uniqueCandidateIds.length === 0) return event;
+
+    let client: AnymarketClient | null = null;
+    try {
+        client = await getAnyMarketClient(accountId);
+    } catch (error) {
+        console.warn("[Anymarket Returns Webhook] Nao foi possivel carregar a integracao para enriquecer o pedido.", error);
+        return event;
+    }
+
+    if (!client) return event;
+
+    for (const candidateId of uniqueCandidateIds) {
+        try {
+            const order = await client.fetchApi(`/orders/${encodeURIComponent(candidateId)}`, {}, 1);
+            if (!order || typeof order !== "object") continue;
+
+            const details = normalizeAnyMarketOrderDetails(order);
+            return mergeEventDetails(event, details);
+        } catch (error) {
+            console.warn(`[Anymarket Returns Webhook] Nao foi possivel buscar detalhes do pedido ${candidateId}.`, error);
+        }
+    }
+
+    return event;
+}
+
 function buildIdempotencyKey(event: NormalizedAnyMarketReturnEvent) {
     if (event.externalEventId) return `anymarket:return:event:${event.externalEventId}`;
 
@@ -544,7 +794,10 @@ export async function processAnyMarketReturnWebhook(
     accountId: string,
     payload: unknown
 ): Promise<ProcessAnyMarketReturnWebhookResult> {
-    const event = normalizeAnyMarketReturnWebhookPayload(payload);
+    const event = await enrichReturnEventFromOrder(
+        accountId,
+        normalizeAnyMarketReturnWebhookPayload(payload)
+    );
     const now = new Date().toISOString();
     const accountRef = adminDb.collection("accounts").doc(accountId);
     const logRef = accountRef.collection("webhookEvents").doc();

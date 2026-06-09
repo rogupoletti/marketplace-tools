@@ -878,8 +878,11 @@ export default function ReturnsPage() {
                                                         <h3 className="font-bold text-gray-900 truncate">{item.orderNumber}</h3>
                                                     </div>
                                                     <div className="flex flex-col items-end gap-1">
-                                                        <span className="text-[11px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md">
-                                                            {RETURN_CHANNEL_LABELS[item.channel]}
+                                                        <span
+                                                            className="max-w-[120px] truncate text-[11px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md"
+                                                            title={item.marketplace || RETURN_CHANNEL_LABELS[item.channel]}
+                                                        >
+                                                            {item.marketplace || RETURN_CHANNEL_LABELS[item.channel]}
                                                         </span>
                                                         <span className={item.source === "anymarket"
                                                             ? "text-[11px] font-bold bg-blue-50 text-[#2d3277] px-2 py-1 rounded-md"
