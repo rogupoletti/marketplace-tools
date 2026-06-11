@@ -80,6 +80,7 @@ const ANYMARKET_RETURN_STATUS_MAP: Record<string, ReturnStatus> = {
     DISPUTE_REQUIRED: "pending_dispute_or_refund",
     PENDING_DISPUTE: "pending_dispute_or_refund",
     PENDING_REFUND: "pending_dispute_or_refund",
+    RETURN_CHECK_NOT_OK: "pending_dispute_or_refund",
     RETURN_INVOICE_PENDING: "pending_return_invoice",
     PENDING_RETURN_INVOICE: "pending_return_invoice",
     RETURN_COMPLETED: "resolved",
@@ -291,6 +292,122 @@ function normalizeAnyMarketOrderDetails(order: unknown): Partial<NormalizedAnyMa
             "paymentDate",
             "invoice.date",
             "invoice.createdAt",
+            "content.updatedAt",
+            "content.createdAt",
+        ]),
+    };
+}
+
+function normalizeAnyMarketReturnDetails(returnPayload: unknown): Partial<NormalizedAnyMarketReturnEvent> {
+    const externalOrderId = firstString(returnPayload, [
+        "orderId",
+        "anymarketOrderId",
+        "idOrder",
+        "order.id",
+        "content.orderId",
+        "content.order.id",
+    ]);
+    const marketplaceOrderId = firstString(returnPayload, [
+        "marketplaceOrderId",
+        "marketPlaceOrderId",
+        "marketPlaceNumber",
+        "marketplaceNumber",
+        "order.marketPlaceNumber",
+        "order.marketplaceOrderId",
+        "content.marketplaceOrderId",
+        "content.marketPlaceNumber",
+    ]);
+
+    return {
+        externalReturnId: firstString(returnPayload, [
+            "id",
+            "returnId",
+            "anymarketReturnId",
+            "return.id",
+            "content.id",
+            "content.returnId",
+        ]),
+        externalOrderId,
+        marketplaceOrderId,
+        orderNumber: marketplaceOrderId || externalOrderId,
+        invoiceNumber: firstString(returnPayload, [
+            "invoiceNumber",
+            "invoice.number",
+            "invoice.nfeNumber",
+            "invoice.nfNumber",
+            "order.invoiceNumber",
+            "order.invoice.number",
+            "content.invoiceNumber",
+            "content.invoice.number",
+        ]),
+        customerName: firstString(returnPayload, [
+            "customerName",
+            "buyerName",
+            "buyer.name",
+            "customer.name",
+            "client.name",
+            "order.buyer.name",
+            "order.customer.name",
+            "content.buyerName",
+            "content.customerName",
+            "content.buyer.name",
+            "content.customer.name",
+        ]),
+        marketplace: firstString(returnPayload, [
+            "marketplace",
+            "marketPlace",
+            "marketplace.name",
+            "marketPlace.name",
+            "accountName",
+            "order.marketPlace",
+            "order.marketplace",
+            "content.marketplace",
+            "content.marketPlace",
+        ]),
+        anymarketStatus: firstString(returnPayload, [
+            "status",
+            "returnStatus",
+            "status.name",
+            "status.description",
+            "return.status",
+            "reverseLogistics.status",
+            "content.status",
+            "content.returnStatus",
+        ]),
+        trackingCode: firstString(returnPayload, [
+            "trackingCode",
+            "trackingNumber",
+            "tracking.number",
+            "tracking.code",
+            "shipping.trackingCode",
+            "shipping.trackingNumber",
+            "shipping.tracking.number",
+            "shipping.tracking.code",
+            "content.trackingCode",
+            "content.trackingNumber",
+        ]),
+        trackingCarrier: firstString(returnPayload, [
+            "trackingCarrier",
+            "carrier",
+            "tracking.carrier",
+            "shipping.carrier",
+            "shipping.carrierName",
+            "shipping.tracking.carrier",
+            "content.trackingCarrier",
+            "content.carrier",
+        ]),
+        trackingUrl: firstString(returnPayload, [
+            "trackingUrl",
+            "tracking.url",
+            "shipping.trackingUrl",
+            "shipping.tracking.url",
+            "content.trackingUrl",
+            "content.tracking.url",
+        ]),
+        eventTimestamp: firstTimestamp(returnPayload, [
+            "updatedAt",
+            "createdAt",
+            "date",
             "content.updatedAt",
             "content.createdAt",
         ]),
@@ -647,18 +764,6 @@ async function enrichReturnEventFromOrder(
     accountId: string,
     event: NormalizedAnyMarketReturnEvent
 ): Promise<NormalizedAnyMarketReturnEvent> {
-    const candidateIds = [
-        event.externalOrderId,
-        event.orderNumber,
-        event.marketplaceOrderId,
-        event.externalReturnId,
-    ]
-        .map((value) => cleanString(value))
-        .filter((value): value is string => Boolean(value));
-    const uniqueCandidateIds = [...new Set(candidateIds)];
-
-    if (uniqueCandidateIds.length === 0) return event;
-
     let client: AnymarketClient | null = null;
     try {
         client = await getAnyMarketClient(accountId);
@@ -669,19 +774,45 @@ async function enrichReturnEventFromOrder(
 
     if (!client) return event;
 
+    let enrichedEvent = event;
+    const returnId = cleanString(event.externalReturnId);
+    if (returnId) {
+        try {
+            const returnPayload = await client.fetchApi(`/orders/returns/${encodeURIComponent(returnId)}`, {}, 1);
+            if (returnPayload && typeof returnPayload === "object") {
+                const returnDetails = normalizeAnyMarketReturnDetails(returnPayload);
+                enrichedEvent = mergeEventDetails(enrichedEvent, returnDetails);
+            }
+        } catch (error) {
+            console.warn(`[Anymarket Returns Webhook] Nao foi possivel buscar detalhes da devolucao ${returnId}.`, error);
+        }
+    }
+
+    const candidateIds = [
+        enrichedEvent.externalOrderId,
+        event.externalOrderId,
+        enrichedEvent.orderNumber,
+        enrichedEvent.marketplaceOrderId,
+        event.orderNumber,
+        event.marketplaceOrderId,
+    ]
+        .map((value) => cleanString(value))
+        .filter((value): value is string => Boolean(value) && value !== returnId);
+    const uniqueCandidateIds = [...new Set(candidateIds)];
+
     for (const candidateId of uniqueCandidateIds) {
         try {
             const order = await client.fetchApi(`/orders/${encodeURIComponent(candidateId)}`, {}, 1);
             if (!order || typeof order !== "object") continue;
 
             const details = normalizeAnyMarketOrderDetails(order);
-            return mergeEventDetails(event, details);
+            return mergeEventDetails(enrichedEvent, details);
         } catch (error) {
             console.warn(`[Anymarket Returns Webhook] Nao foi possivel buscar detalhes do pedido ${candidateId}.`, error);
         }
     }
 
-    return event;
+    return enrichedEvent;
 }
 
 function buildIdempotencyKey(event: NormalizedAnyMarketReturnEvent) {
@@ -961,6 +1092,14 @@ export async function processAnyMarketReturnWebhook(
 
         const current = existingReturn.data;
         const updateData = getExternalReturnUpdate(event, now);
+        const shouldUpdateOrderNumber = Boolean(
+            event.orderNumber &&
+            (
+                !current.orderNumber ||
+                current.orderNumber === current.externalReturnId ||
+                current.orderNumber === event.externalReturnId
+            )
+        );
         let nextStatus: ReturnStatus | undefined;
         let action: ReturnHistoryAction = "webhook_received";
         let previousStatus: ReturnStatus | undefined;
@@ -1002,6 +1141,7 @@ export async function processAnyMarketReturnWebhook(
             existingReturn.ref,
             withoutUndefined({
                 ...updateData,
+                orderNumber: shouldUpdateOrderNumber ? event.orderNumber : undefined,
                 status: nextStatus,
             })
         );
