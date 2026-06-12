@@ -101,6 +101,10 @@ function resolvedOrInvoiceStatus(item: MarketplaceReturn): ReturnStatus {
     return item.returnType === "full" ? "resolved" : "pending_return_invoice";
 }
 
+function returnItemSkuLabel(item: NonNullable<MarketplaceReturn["returnItems"]>[number]) {
+    return item.sku || item.marketplaceSkuId || item.skuId || "-";
+}
+
 function hasFormChanges(form: ReturnFormState, original?: MarketplaceReturn | null) {
     if (!original) return true;
     return (
@@ -1242,13 +1246,31 @@ export default function ReturnsPage() {
                                                 </p>
                                             </div>
                                             <div>
-                                                <p className="text-xs font-bold text-gray-400 uppercase">Status externo</p>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Status</p>
                                                 <p className="font-semibold text-gray-800 mt-1">{selectedReturn.anymarketStatus || "-"}</p>
                                             </div>
                                             <div>
                                                 <p className="text-xs font-bold text-gray-400 uppercase">Pedido marketplace</p>
                                                 <p className="font-semibold text-gray-800 mt-1">
-                                                    {selectedReturn.marketplaceOrderId || selectedReturn.externalOrderId || "-"}
+                                                    {selectedReturn.marketplaceOrderId || "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Devolução marketplace</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.marketplaceReturnId || "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Pedido AnyMarket</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.externalOrderId || "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Devolução AnyMarket</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.externalReturnId || "-"}
                                                 </p>
                                             </div>
                                             <div>
@@ -1260,13 +1282,7 @@ export default function ReturnsPage() {
                                             <div>
                                                 <p className="text-xs font-bold text-gray-400 uppercase">Rastreio reverso</p>
                                                 <p className="font-semibold text-gray-800 mt-1">
-                                                    {selectedReturn.trackingCode || "-"}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-bold text-gray-400 uppercase">Transportadora</p>
-                                                <p className="font-semibold text-gray-800 mt-1">
-                                                    {selectedReturn.trackingCarrier || "-"}
+                                                    {selectedReturn.reverseTrackingCode || selectedReturn.trackingCode || "-"}
                                                 </p>
                                             </div>
                                         </div>
@@ -1282,6 +1298,37 @@ export default function ReturnsPage() {
                                         {renderQuickActions(selectedReturn, "detail")}
                                     </div>
                                 )}
+
+                                <div className="bg-white border border-gray-100 rounded-xl p-4">
+                                    <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-3">
+                                        <PackageOpen className="w-4 h-4 text-[#2d3277]" />
+                                        Itens devolvidos
+                                    </h3>
+                                    {selectedReturn.returnItems && selectedReturn.returnItems.length > 0 ? (
+                                        <div className="divide-y divide-gray-100">
+                                            {selectedReturn.returnItems.map((item, index) => (
+                                                <div key={`${item.id || item.orderItemId || item.sku || index}`} className="py-3 first:pt-0 last:pb-0">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="font-semibold text-gray-800 break-words">
+                                                                {item.title || "Item sem descrição"}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                SKU: {returnItemSkuLabel(item)}
+                                                                {item.orderItemId ? ` · Item pedido: ${item.orderItemId}` : ""}
+                                                            </p>
+                                                        </div>
+                                                        <span className="flex-shrink-0 rounded-md bg-gray-50 px-2 py-1 text-xs font-bold text-gray-600">
+                                                            Qtd. {item.quantity ?? "-"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-gray-400">Nenhum item informado pela AnyMarket.</p>
+                                    )}
+                                </div>
 
                                 <div className="bg-white border border-gray-100 rounded-xl p-4">
                                     <div className="flex items-center justify-between gap-3 mb-3">

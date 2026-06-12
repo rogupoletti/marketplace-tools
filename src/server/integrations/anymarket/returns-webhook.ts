@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { adminDb } from "@/lib/firebase-admin";
 import {
     MarketplaceReturn,
+    MarketplaceReturnItem,
     ReturnChannel,
     ReturnHistoryAction,
     ReturnStatus,
@@ -22,14 +23,22 @@ export interface NormalizedAnyMarketReturnEvent {
     externalReturnId?: string;
     externalOrderId?: string;
     marketplaceOrderId?: string;
+    marketplaceReturnId?: string;
     orderNumber?: string;
     invoiceNumber?: string;
     customerName?: string;
     marketplace?: string;
     anymarketStatus?: string;
     trackingCode?: string;
-    trackingCarrier?: string;
     trackingUrl?: string;
+    reverseShippingId?: string;
+    reverseTrackingCode?: string;
+    reverseTrackingNumber?: string;
+    reverseMarketplaceShippingId?: string;
+    reverseShippingStatus?: string;
+    reverseShippingSubStatus?: string;
+    returnItems?: MarketplaceReturnItem[];
+    orderFull?: boolean;
     eventTimestamp?: string;
     rawPayload: unknown;
     isReturnEvent: boolean;
@@ -116,6 +125,29 @@ function cleanString(value: unknown): string | undefined {
     return undefined;
 }
 
+function cleanNumber(value: unknown): number | undefined {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value.replace(",", "."));
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return undefined;
+}
+
+function cleanBoolean(value: unknown): boolean | undefined {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") {
+        if (value === 1) return true;
+        if (value === 0) return false;
+    }
+    if (typeof value === "string") {
+        const normalized = normalizeKey(value);
+        if (["TRUE", "SIM", "YES", "S", "1"].includes(normalized)) return true;
+        if (["FALSE", "NAO", "NO", "N", "0"].includes(normalized)) return false;
+    }
+    return undefined;
+}
+
 function getByPath(payload: unknown, path: string): unknown {
     if (!payload || typeof payload !== "object") return undefined;
     return path.split(".").reduce<unknown>((current, key) => {
@@ -128,6 +160,14 @@ function firstString(payload: unknown, paths: string[]): string | undefined {
     for (const path of paths) {
         const value = cleanString(getByPath(payload, path));
         if (value) return value;
+    }
+    return undefined;
+}
+
+function firstBoolean(payload: unknown, paths: string[]): boolean | undefined {
+    for (const path of paths) {
+        const value = cleanBoolean(getByPath(payload, path));
+        if (value !== undefined) return value;
     }
     return undefined;
 }
@@ -150,14 +190,22 @@ function mergeEventDetails(
         ...event,
         externalOrderId: event.externalOrderId || details.externalOrderId,
         marketplaceOrderId: event.marketplaceOrderId || details.marketplaceOrderId,
+        marketplaceReturnId: event.marketplaceReturnId || details.marketplaceReturnId,
         orderNumber: event.orderNumber || details.orderNumber,
         invoiceNumber: event.invoiceNumber || details.invoiceNumber,
         customerName: event.customerName || details.customerName,
         marketplace: event.marketplace || details.marketplace,
         anymarketStatus: event.anymarketStatus || details.anymarketStatus,
         trackingCode: event.trackingCode || details.trackingCode,
-        trackingCarrier: event.trackingCarrier || details.trackingCarrier,
         trackingUrl: event.trackingUrl || details.trackingUrl,
+        reverseShippingId: event.reverseShippingId || details.reverseShippingId,
+        reverseTrackingCode: event.reverseTrackingCode || details.reverseTrackingCode,
+        reverseTrackingNumber: event.reverseTrackingNumber || details.reverseTrackingNumber,
+        reverseMarketplaceShippingId: event.reverseMarketplaceShippingId || details.reverseMarketplaceShippingId,
+        reverseShippingStatus: event.reverseShippingStatus || details.reverseShippingStatus,
+        reverseShippingSubStatus: event.reverseShippingSubStatus || details.reverseShippingSubStatus,
+        returnItems: event.returnItems || details.returnItems,
+        orderFull: event.orderFull ?? details.orderFull,
         eventTimestamp: event.eventTimestamp || details.eventTimestamp,
     };
 }
@@ -260,6 +308,20 @@ function normalizeAnyMarketOrderDetails(order: unknown): Partial<NormalizedAnyMa
             "content.status",
             "content.status.name",
         ]),
+        orderFull: firstBoolean(order, [
+            "full",
+            "isFull",
+            "fulfillment",
+            "order.full",
+            "order.isFull",
+            "order.fulfillment",
+            "content.full",
+            "content.isFull",
+            "content.fulfillment",
+            "content.order.full",
+            "content.order.isFull",
+            "content.order.fulfillment",
+        ]),
         eventTimestamp: firstTimestamp(order, [
             "updatedAt",
             "createdAt",
@@ -303,6 +365,12 @@ function normalizeAnyMarketReturnDetails(returnPayload: unknown): Partial<Normal
         ]),
         externalOrderId,
         marketplaceOrderId,
+        marketplaceReturnId: firstString(returnPayload, [
+            "marketplaceReturnId",
+            "return.marketplaceReturnId",
+            "content.marketplaceReturnId",
+            "content.return.marketplaceReturnId",
+        ]),
         orderNumber: marketplaceOrderId || externalOrderId,
         invoiceNumber: firstString(returnPayload, [
             "invoiceNumber",
@@ -348,54 +416,13 @@ function normalizeAnyMarketReturnDetails(returnPayload: unknown): Partial<Normal
             "content.status",
             "content.returnStatus",
         ]),
-        trackingCode: firstString(returnPayload, [
-            "trackingCode",
-            "trackingNumber",
-            "tracking.number",
-            "tracking.code",
-            "shipping.trackingCode",
-            "shipping.trackingNumber",
-            "shipping.marketplaceShippingId",
-            "shipping.tracking.number",
-            "shipping.tracking.code",
-            "shipping.0.trackingCode",
-            "shipping.0.trackingNumber",
-            "shipping.0.marketplaceShippingId",
-            "shipping.0.tracking.number",
-            "shipping.0.tracking.code",
-            "content.trackingCode",
-            "content.trackingNumber",
-            "content.shipping.0.trackingNumber",
-            "content.shipping.0.marketplaceShippingId",
-        ]),
-        trackingCarrier: firstString(returnPayload, [
-            "trackingCarrier",
-            "carrier",
-            "tracking.carrier",
-            "shipping.carrier",
-            "shipping.carrierName",
-            "shipping.transportServiceName",
-            "shipping.tracking.carrier",
-            "shipping.0.carrier",
-            "shipping.0.carrierName",
-            "shipping.0.transportServiceName",
-            "shipping.0.tracking.carrier",
-            "content.trackingCarrier",
-            "content.carrier",
-            "content.shipping.0.carrier",
-            "content.shipping.0.transportServiceName",
-        ]),
-        trackingUrl: firstString(returnPayload, [
-            "trackingUrl",
-            "tracking.url",
-            "shipping.trackingUrl",
-            "shipping.tracking.url",
-            "shipping.0.trackingUrl",
-            "shipping.0.tracking.url",
-            "content.trackingUrl",
-            "content.tracking.url",
-            "content.shipping.0.trackingUrl",
-            "content.shipping.0.tracking.url",
+        orderFull: firstBoolean(returnPayload, [
+            "order.full",
+            "order.isFull",
+            "order.fulfillment",
+            "content.order.full",
+            "content.order.isFull",
+            "content.order.fulfillment",
         ]),
         eventTimestamp: firstTimestamp(returnPayload, [
             "updatedAt",
@@ -404,7 +431,142 @@ function normalizeAnyMarketReturnDetails(returnPayload: unknown): Partial<Normal
             "content.updatedAt",
             "content.createdAt",
         ]),
+        returnItems: normalizeAnyMarketReturnItems(returnPayload),
     };
+}
+
+function normalizeAnyMarketReturnItems(returnPayload: unknown): MarketplaceReturnItem[] | undefined {
+    const items = getArrayByPath(returnPayload, [
+        "items",
+        "return.items",
+        "content.items",
+        "content.return.items",
+    ]);
+    if (items.length === 0) return undefined;
+
+    return items
+        .map((item) => {
+            const normalized = {
+                id: firstString(item, ["id"]),
+                orderItemId: firstString(item, ["orderItemId", "itemId"]),
+                skuId: firstString(item, ["skuId", "sku.id"]),
+                marketplaceSkuId: firstString(item, ["marketplaceSkuId", "marketPlaceSkuId"]),
+                sku: firstString(item, [
+                    "sku",
+                    "partnerId",
+                    "sku.partnerId",
+                    "sku.sku",
+                    "marketplaceSkuId",
+                    "skuId",
+                ]),
+                title: firstString(item, [
+                    "title",
+                    "productTitle",
+                    "name",
+                    "description",
+                    "sku.title",
+                    "sku.name",
+                ]),
+                quantity: cleanNumber(getByPath(item, "quantity")) ||
+                    cleanNumber(getByPath(item, "amount")) ||
+                    cleanNumber(getByPath(item, "returnedAmount")) ||
+                    cleanNumber(getByPath(item, "returnQuantity")),
+            } satisfies MarketplaceReturnItem;
+
+            return Object.fromEntries(
+                Object.entries(normalized).filter(([, value]) => value !== undefined)
+            ) as MarketplaceReturnItem;
+        })
+        .filter((item) => Object.keys(item).length > 0);
+}
+
+function getArrayByPath(payload: unknown, paths: string[]): unknown[] {
+    for (const path of paths) {
+        const value = getByPath(payload, path);
+        if (Array.isArray(value)) return value;
+    }
+    return [];
+}
+
+function getReverseTrackingCode(marketplace: string | undefined, shipping: unknown): string | undefined {
+    const normalizedMarketplace = normalizeKey(marketplace || "");
+    const trackingNumber = firstString(shipping, [
+        "trackingNumber",
+        "trackingCode",
+        "tracking.number",
+        "tracking.code",
+    ]);
+    const marketplaceShippingId = firstString(shipping, [
+        "marketplaceShippingId",
+        "marketPlaceShippingId",
+        "shippingId",
+    ]);
+
+    if (normalizedMarketplace.includes("MERCADO_LIVRE") || normalizedMarketplace.includes("MERCADOLIVRE") || normalizedMarketplace.includes("MELI")) {
+        return marketplaceShippingId || trackingNumber;
+    }
+
+    if (normalizedMarketplace.includes("SHOPEE")) {
+        return trackingNumber || marketplaceShippingId;
+    }
+
+    return trackingNumber || marketplaceShippingId;
+}
+
+function normalizeAnyMarketShippingDetails(
+    returnPayload: unknown,
+    shipping: unknown,
+    marketplace?: string
+): Partial<NormalizedAnyMarketReturnEvent> {
+    const reverseTrackingNumber = firstString(shipping, [
+        "trackingNumber",
+        "trackingCode",
+        "tracking.number",
+        "tracking.code",
+    ]);
+    const reverseMarketplaceShippingId = firstString(shipping, [
+        "marketplaceShippingId",
+        "marketPlaceShippingId",
+        "shippingId",
+    ]);
+    const reverseTrackingCode = getReverseTrackingCode(marketplace, shipping) || firstString(returnPayload, [
+        "trackingCode",
+        "trackingNumber",
+        "tracking.number",
+        "tracking.code",
+    ]);
+
+    return {
+        trackingCode: reverseTrackingCode,
+        trackingUrl: firstString(shipping, [
+            "trackingUrl",
+            "tracking.url",
+        ]),
+        reverseShippingId: firstString(shipping, ["id"]),
+        reverseTrackingCode,
+        reverseTrackingNumber,
+        reverseMarketplaceShippingId,
+        reverseShippingStatus: firstString(shipping, ["status"]),
+        reverseShippingSubStatus: firstString(shipping, ["subStatus"]),
+        eventTimestamp: firstTimestamp(shipping, [
+            "updatedAt",
+            "createdAt",
+            "estimatedDelivery",
+        ]),
+    };
+}
+
+function expandEventByReturnShipping(
+    event: NormalizedAnyMarketReturnEvent,
+    returnPayload: unknown
+): NormalizedAnyMarketReturnEvent[] {
+    const shippingItems = getArrayByPath(returnPayload, ["shipping", "content.shipping"]);
+    if (shippingItems.length === 0) return [event];
+
+    return shippingItems.map((shipping) => mergeEventDetails(
+        event,
+        normalizeAnyMarketShippingDetails(returnPayload, shipping, event.marketplace)
+    ));
 }
 
 function stableStringify(value: unknown): string {
@@ -432,7 +594,10 @@ function mapMarketplaceToChannel(marketplace?: string): ReturnChannel {
     return "other";
 }
 
-function inferReturnType(channel: ReturnChannel, marketplace?: string): ReturnType {
+function inferReturnType(channel: ReturnChannel, marketplace?: string, orderFull?: boolean): ReturnType {
+    if (orderFull === true) return "full";
+    if (orderFull === false) return "flex";
+
     const normalized = normalizeKey(marketplace || "");
     if (normalized.includes("FULL")) return "full";
     if (normalized.includes("FLEX")) return "flex";
@@ -631,26 +796,6 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
         "content.reverseLogistics.trackingNumber",
         "content.reverseLogistics.tracking.number",
     ]);
-    const trackingCarrier = firstString(payload, [
-        "trackingCarrier",
-        "carrier",
-        "tracking.carrier",
-        "return.trackingCarrier",
-        "return.tracking.carrier",
-        "devolution.trackingCarrier",
-        "reverseLogistics.trackingCarrier",
-        "reverseLogistics.carrier",
-        "reverseLogistics.tracking.carrier",
-        "content.trackingCarrier",
-        "content.carrier",
-        "content.tracking.carrier",
-        "content.return.trackingCarrier",
-        "content.return.tracking.carrier",
-        "content.devolution.trackingCarrier",
-        "content.reverseLogistics.trackingCarrier",
-        "content.reverseLogistics.carrier",
-        "content.reverseLogistics.tracking.carrier",
-    ]);
     const trackingUrl = firstString(payload, [
         "trackingUrl",
         "tracking.url",
@@ -733,7 +878,6 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
         marketplace,
         anymarketStatus,
         trackingCode,
-        trackingCarrier,
         trackingUrl,
         eventTimestamp,
         rawPayload: payload,
@@ -753,21 +897,22 @@ async function getAnyMarketClient(accountId: string): Promise<AnymarketClient | 
     return new AnymarketClient(token);
 }
 
-async function enrichReturnEventFromOrder(
+async function enrichReturnEventsFromOrder(
     accountId: string,
     event: NormalizedAnyMarketReturnEvent
-): Promise<NormalizedAnyMarketReturnEvent> {
+): Promise<NormalizedAnyMarketReturnEvent[]> {
     let client: AnymarketClient | null = null;
     try {
         client = await getAnyMarketClient(accountId);
     } catch (error) {
         console.warn("[Anymarket Returns Webhook] Nao foi possivel carregar a integracao para enriquecer o pedido.", error);
-        return event;
+        return [event];
     }
 
-    if (!client) return event;
+    if (!client) return [event];
 
     let enrichedEvent = event;
+    let enrichedEvents = [event];
     const returnId = cleanString(event.externalReturnId);
     if (returnId) {
         try {
@@ -775,6 +920,7 @@ async function enrichReturnEventFromOrder(
             if (returnPayload && typeof returnPayload === "object") {
                 const returnDetails = normalizeAnyMarketReturnDetails(returnPayload);
                 enrichedEvent = mergeEventDetails(enrichedEvent, returnDetails);
+                enrichedEvents = expandEventByReturnShipping(enrichedEvent, returnPayload);
             }
         } catch (error) {
             console.warn(`[Anymarket Returns Webhook] Nao foi possivel buscar detalhes da devolucao ${returnId}.`, error);
@@ -799,22 +945,24 @@ async function enrichReturnEventFromOrder(
             if (!order || typeof order !== "object") continue;
 
             const details = normalizeAnyMarketOrderDetails(order);
-            return mergeEventDetails(enrichedEvent, details);
+            return enrichedEvents.map((eventItem) => mergeEventDetails(eventItem, details));
         } catch (error) {
             console.warn(`[Anymarket Returns Webhook] Nao foi possivel buscar detalhes do pedido ${candidateId}.`, error);
         }
     }
 
-    return enrichedEvent;
+    return enrichedEvents;
 }
 
 function buildIdempotencyKey(event: NormalizedAnyMarketReturnEvent) {
-    if (event.externalEventId) return `anymarket:return:event:${event.externalEventId}`;
+    const shippingKey = event.reverseShippingId || event.reverseTrackingCode || event.trackingCode || "no-shipping-id";
+    if (event.externalEventId) return `anymarket:return:event:${event.externalEventId}:${shippingKey}`;
 
     const rawHash = hash(stableStringify(event.rawPayload)).slice(0, 16);
     return [
         "anymarket:return",
         event.externalReturnId || "no-return-id",
+        shippingKey,
         event.externalOrderId || event.marketplaceOrderId || event.orderNumber || "no-order-id",
         event.anymarketStatus || "no-status",
         event.eventTimestamp || rawHash,
@@ -823,8 +971,32 @@ function buildIdempotencyKey(event: NormalizedAnyMarketReturnEvent) {
 
 async function findExistingReturn(accountId: string, event: NormalizedAnyMarketReturnEvent) {
     const returnsRef = adminDb.collection("accounts").doc(accountId).collection("returns");
+
+    if (event.externalReturnId) {
+        const snapshot = await returnsRef.where("externalReturnId", "==", event.externalReturnId).limit(50).get();
+        const matches = snapshot.docs.map((doc) => ({
+            ref: doc.ref,
+            data: { id: doc.id, ...doc.data() } as MarketplaceReturn,
+        }));
+
+        const shippingMatched = matches.find(({ data }) => (
+            (event.reverseShippingId && data.reverseShippingId === event.reverseShippingId) ||
+            (event.reverseTrackingCode && (data.reverseTrackingCode === event.reverseTrackingCode || data.trackingCode === event.reverseTrackingCode)) ||
+            (event.trackingCode && data.trackingCode === event.trackingCode)
+        ));
+        if (shippingMatched) return shippingMatched;
+
+        if (event.reverseShippingId || event.reverseTrackingCode || event.trackingCode) {
+            const legacyMatch = matches.find(({ data }) => !data.reverseShippingId && !data.reverseTrackingCode && !data.trackingCode);
+            if (legacyMatch) return legacyMatch;
+            if (matches.length === 1) return matches[0];
+            return null;
+        }
+
+        if (matches[0]) return matches[0];
+    }
+
     const lookupFields: Array<[keyof MarketplaceReturn, string | undefined]> = [
-        ["externalReturnId", event.externalReturnId],
         ["marketplaceOrderId", event.marketplaceOrderId],
         ["externalOrderId", event.externalOrderId],
         ["orderNumber", event.orderNumber || event.marketplaceOrderId || event.externalOrderId],
@@ -852,12 +1024,19 @@ function getExternalReturnUpdate(event: NormalizedAnyMarketReturnEvent, now: str
         externalReturnId: event.externalReturnId,
         externalOrderId: event.externalOrderId,
         marketplaceOrderId: event.marketplaceOrderId,
+        marketplaceReturnId: event.marketplaceReturnId,
         marketplace: event.marketplace,
         anymarketStatus: event.anymarketStatus,
         trackingCode: event.trackingCode,
-        trackingCarrier: event.trackingCarrier,
         trackingUrl: event.trackingUrl,
-        trackingUpdatedAt: event.trackingCode || event.trackingCarrier || event.trackingUrl ? event.eventTimestamp || now : undefined,
+        trackingUpdatedAt: event.trackingCode || event.trackingUrl ? event.eventTimestamp || now : undefined,
+        reverseShippingId: event.reverseShippingId,
+        reverseTrackingCode: event.reverseTrackingCode,
+        reverseTrackingNumber: event.reverseTrackingNumber,
+        reverseMarketplaceShippingId: event.reverseMarketplaceShippingId,
+        reverseShippingStatus: event.reverseShippingStatus,
+        reverseShippingSubStatus: event.reverseShippingSubStatus,
+        returnItems: event.returnItems && event.returnItems.length > 0 ? event.returnItems : undefined,
         lastWebhookReceivedAt: now,
         lastExternalStatusAt: event.eventTimestamp || now,
         invoiceNumber: event.invoiceNumber,
@@ -914,14 +1093,10 @@ async function markLog(
     await batch.commit();
 }
 
-export async function processAnyMarketReturnWebhook(
+async function processAnyMarketReturnEvent(
     accountId: string,
-    payload: unknown
+    event: NormalizedAnyMarketReturnEvent
 ): Promise<ProcessAnyMarketReturnWebhookResult> {
-    const event = await enrichReturnEventFromOrder(
-        accountId,
-        normalizeAnyMarketReturnWebhookPayload(payload)
-    );
     const now = new Date().toISOString();
     const accountRef = adminDb.collection("accounts").doc(accountId);
     const logRef = accountRef.collection("webhookEvents").doc();
@@ -943,7 +1118,11 @@ export async function processAnyMarketReturnWebhook(
                 externalEventId: event.externalEventId,
                 externalReturnId: event.externalReturnId,
                 externalOrderId: event.externalOrderId,
+                marketplaceReturnId: event.marketplaceReturnId,
+                marketplaceOrderId: event.marketplaceOrderId,
                 marketplace: event.marketplace,
+                trackingCode: event.trackingCode,
+                reverseShippingId: event.reverseShippingId,
                 rawPayload: event.rawPayload,
                 idempotencyKey,
                 idempotencyHash,
@@ -961,6 +1140,9 @@ export async function processAnyMarketReturnWebhook(
                 eventType: event.eventType || "return_webhook",
                 idempotencyKey,
                 idempotencyHash,
+                externalReturnId: event.externalReturnId,
+                reverseShippingId: event.reverseShippingId,
+                trackingCode: event.trackingCode,
                 firstLogId: existing.firstLogId || logRef.id,
                 lastLogId: logRef.id,
                 duplicateCount: duplicate ? Number(existing.duplicateCount || 0) + 1 : Number(existing.duplicateCount || 0),
@@ -1018,7 +1200,7 @@ export async function processAnyMarketReturnWebhook(
 
         if (!existingReturn) {
             const channel = mapMarketplaceToChannel(event.marketplace);
-            const returnType = inferReturnType(channel, event.marketplace);
+            const returnType = inferReturnType(channel, event.marketplace, event.orderFull);
             const status = getInitialStatus(mappedStatus);
             const returnRef = accountRef.collection("returns").doc();
             const returnData = withoutUndefined({
@@ -1033,12 +1215,19 @@ export async function processAnyMarketReturnWebhook(
                 externalReturnId: event.externalReturnId,
                 externalOrderId: event.externalOrderId,
                 marketplaceOrderId: event.marketplaceOrderId,
+                marketplaceReturnId: event.marketplaceReturnId,
                 marketplace: event.marketplace,
                 anymarketStatus: event.anymarketStatus,
                 trackingCode: event.trackingCode,
-                trackingCarrier: event.trackingCarrier,
                 trackingUrl: event.trackingUrl,
-                trackingUpdatedAt: event.trackingCode || event.trackingCarrier || event.trackingUrl ? event.eventTimestamp || now : undefined,
+                trackingUpdatedAt: event.trackingCode || event.trackingUrl ? event.eventTimestamp || now : undefined,
+                reverseShippingId: event.reverseShippingId,
+                reverseTrackingCode: event.reverseTrackingCode,
+                reverseTrackingNumber: event.reverseTrackingNumber,
+                reverseMarketplaceShippingId: event.reverseMarketplaceShippingId,
+                reverseShippingStatus: event.reverseShippingStatus,
+                reverseShippingSubStatus: event.reverseShippingSubStatus,
+                returnItems: event.returnItems && event.returnItems.length > 0 ? event.returnItems : undefined,
                 lastWebhookReceivedAt: now,
                 lastExternalStatusAt: event.eventTimestamp || now,
                 returnDate: (event.eventTimestamp || now).slice(0, 10),
@@ -1085,6 +1274,8 @@ export async function processAnyMarketReturnWebhook(
 
         const current = existingReturn.data;
         const updateData = getExternalReturnUpdate(event, now);
+        const inferredReturnType = inferReturnType(current.channel, event.marketplace, event.orderFull);
+        const shouldUpdateReturnType = current.returnType === "other" && inferredReturnType !== "other";
         const shouldUpdateOrderNumber = Boolean(
             event.orderNumber &&
             (
@@ -1134,6 +1325,7 @@ export async function processAnyMarketReturnWebhook(
             existingReturn.ref,
             withoutUndefined({
                 ...updateData,
+                returnType: shouldUpdateReturnType ? inferredReturnType : undefined,
                 orderNumber: shouldUpdateOrderNumber ? event.orderNumber : undefined,
                 status: nextStatus,
             })
@@ -1169,4 +1361,34 @@ export async function processAnyMarketReturnWebhook(
         await markLog(accountId, logRef.id, idempotencyHash, "failed", message);
         throw error;
     }
+}
+
+export async function processAnyMarketReturnWebhook(
+    accountId: string,
+    payload: unknown
+): Promise<ProcessAnyMarketReturnWebhookResult> {
+    const events = await enrichReturnEventsFromOrder(
+        accountId,
+        normalizeAnyMarketReturnWebhookPayload(payload)
+    );
+    const results: ProcessAnyMarketReturnWebhookResult[] = [];
+
+    for (const event of events) {
+        results.push(await processAnyMarketReturnEvent(accountId, event));
+    }
+
+    const representativeResult = results.find((result) => result.processingStatus === "processed") || results[0];
+    if (!representativeResult) {
+        throw new Error("Nenhum evento AnyMarket foi processado.");
+    }
+
+    if (results.length <= 1) return representativeResult;
+
+    return {
+        ...representativeResult,
+        createdReturn: results.some((result) => result.createdReturn),
+        statusChanged: results.some((result) => result.statusChanged),
+        duplicate: results.every((result) => result.duplicate),
+        processingMessage: `${representativeResult.processingMessage} ${results.length} item(ns) de envio reverso processado(s).`,
+    };
 }

@@ -24,6 +24,16 @@ export type ReturnHistoryAction =
     | "cancelled"
     | "resolved";
 
+export interface MarketplaceReturnItem {
+    id?: string;
+    orderItemId?: string;
+    skuId?: string;
+    marketplaceSkuId?: string;
+    sku?: string;
+    title?: string;
+    quantity?: number;
+}
+
 export interface MarketplaceReturn {
     id: string;
     accountId: string;
@@ -37,12 +47,19 @@ export interface MarketplaceReturn {
     externalReturnId?: string;
     externalOrderId?: string;
     marketplaceOrderId?: string;
+    marketplaceReturnId?: string;
     marketplace?: string;
     anymarketStatus?: string;
     trackingCode?: string;
-    trackingCarrier?: string;
     trackingUrl?: string;
     trackingUpdatedAt?: string;
+    reverseShippingId?: string;
+    reverseTrackingCode?: string;
+    reverseTrackingNumber?: string;
+    reverseMarketplaceShippingId?: string;
+    reverseShippingStatus?: string;
+    reverseShippingSubStatus?: string;
+    returnItems?: MarketplaceReturnItem[];
     lastWebhookReceivedAt?: string;
     lastExternalStatusAt?: string;
     returnDate: string;
