@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
     AlertTriangle,
     CalendarDays,
+    Camera,
     CheckCircle2,
     ClipboardList,
     Edit3,
@@ -26,9 +28,12 @@ import { db } from "@/lib/firebase";
 import { useUI } from "@/lib/ui-context";
 import {
     MarketplaceReturn,
+    ReturnAnalysisItem,
     ReturnChannel,
     ReturnFormData,
     ReturnHistoryEvent,
+    ReturnPhoto,
+    ReturnProblemType,
     ReturnStatus,
     ReturnType,
     RETURN_CHANNEL_LABELS,
@@ -43,6 +48,18 @@ import {
 
 type ReturnFormState = ReturnFormData & { status?: ReturnStatus };
 type QuickActionVariant = "success" | "warning";
+type ReturnOrderItem = NonNullable<MarketplaceReturn["returnItems"]>[number];
+
+interface UnifiedReturnItem {
+    key: string;
+    title: string;
+    sku: string;
+    ean?: string;
+    orderItem?: ReturnOrderItem;
+    analysisItem?: ReturnAnalysisItem;
+    photos: ReturnPhoto[];
+    source: "order" | "mobile";
+}
 
 interface QuickAction {
     key: string;
@@ -61,6 +78,26 @@ const EMPTY_FORM: ReturnFormState = {
     returnDate: "",
     expectedArrivalDate: "",
     notes: "",
+};
+
+const ANALYSIS_STATUS_LABELS: Record<ReturnAnalysisItem["status"], string> = {
+    ok: "Recebido OK",
+    problem: "Com problema",
+    not_received: "Não recebido",
+    wrong_product: "Produto diferente",
+    partial: "Quantidade parcial",
+};
+
+const PROBLEM_TYPE_LABELS: Record<ReturnProblemType, string> = {
+    damaged: "Avariado",
+    package_violated: "Embalagem violada",
+    missing_part: "Faltando peça/acessório",
+    used_product: "Produto usado",
+    wrong_product: "Produto errado",
+    expired_product: "Produto vencido",
+    partial_quantity: "Quantidade parcial",
+    not_resellable: "Sem condições de revenda",
+    other: "Outro",
 };
 
 function formatDate(date: string | undefined) {
@@ -105,6 +142,124 @@ function returnItemSkuLabel(item: NonNullable<MarketplaceReturn["returnItems"]>[
     return item.sku || item.marketplaceSkuId || item.skuId || "-";
 }
 
+function normalizeSku(value: string | undefined) {
+    return (value || "").replace(/\s+/g, "").trim().toUpperCase();
+}
+
+function analysisHasIssue(item?: ReturnAnalysisItem) {
+    if (!item) return false;
+    return item.status !== "ok" || item.problemTypes.length > 0;
+}
+
+function ReturnPhotoGrid({
+    photos,
+    title,
+}: {
+    photos: ReturnPhoto[];
+    title: string;
+}) {
+    if (photos.length === 0) return null;
+
+    return (
+        <div className="mt-3">
+            <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-gray-500">
+                <Camera className="w-3.5 h-3.5" />
+                Fotos
+            </p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {photos.map((photo, photoIndex) => (
+                    <a
+                        key={photo.id}
+                        href={photo.downloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group block overflow-hidden rounded-lg border border-gray-200 bg-white"
+                        title={`Abrir foto ${photoIndex + 1}`}
+                    >
+                        <Image
+                            src={photo.downloadUrl}
+                            alt={`Foto ${photoIndex + 1} de ${title}`}
+                            width={160}
+                            height={160}
+                            unoptimized
+                            className="aspect-square w-full object-cover transition-transform group-hover:scale-105"
+                        />
+                    </a>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function UnifiedReturnItemCard({ item }: { item: UnifiedReturnItem }) {
+    const analysisItem = item.analysisItem;
+    const hasIssue = analysisHasIssue(analysisItem);
+
+    return (
+        <div className={`rounded-xl border p-3 ${hasIssue ? "border-orange-200 bg-orange-50/50" : "border-gray-100 bg-gray-50"}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 break-words">{item.title}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                        SKU: {item.sku || "-"}
+                        {item.ean ? ` - EAN: ${item.ean}` : ""}
+                        {item.orderItem?.orderItemId ? ` - Item pedido: ${item.orderItem.orderItemId}` : ""}
+                    </p>
+                </div>
+                {analysisItem ? (
+                    <span className={`flex-shrink-0 rounded-md px-2 py-1 text-xs font-bold ${
+                        hasIssue
+                            ? "bg-orange-100 text-orange-700"
+                            : "bg-emerald-100 text-emerald-700"
+                    }`}>
+                        {ANALYSIS_STATUS_LABELS[analysisItem.status]}
+                    </span>
+                ) : (
+                    <span className="flex-shrink-0 rounded-md bg-gray-100 px-2 py-1 text-xs font-bold text-gray-600">
+                        Pedido
+                    </span>
+                )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {item.orderItem ? (
+                    <span className="rounded-md bg-white px-2 py-1 font-bold text-gray-600">
+                        Esperado: {item.orderItem.quantity ?? "-"}
+                    </span>
+                ) : null}
+                {analysisItem ? (
+                    <span className="rounded-md bg-white px-2 py-1 font-bold text-gray-600">
+                        Recebido: {analysisItem.receivedQty}
+                    </span>
+                ) : null}
+                {item.source === "mobile" ? (
+                    <span className="rounded-md bg-blue-50 px-2 py-1 font-bold text-[#2d3277]">
+                        Adicionado no mobile
+                    </span>
+                ) : null}
+            </div>
+
+            {analysisItem?.problemTypes.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                    {analysisItem.problemTypes.map((problemType) => (
+                        <span key={problemType} className="rounded-md border border-orange-200 bg-white px-2 py-1 text-xs font-bold text-orange-700">
+                            {PROBLEM_TYPE_LABELS[problemType]}
+                        </span>
+                    ))}
+                </div>
+            ) : null}
+
+            {analysisItem?.notes ? (
+                <p className="mt-3 whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-sm text-gray-700">
+                    {analysisItem.notes}
+                </p>
+            ) : null}
+
+            <ReturnPhotoGrid photos={item.photos} title={item.title} />
+        </div>
+    );
+}
+
 function hasFormChanges(form: ReturnFormState, original?: MarketplaceReturn | null) {
     if (!original) return true;
     return (
@@ -127,6 +282,8 @@ export default function ReturnsPage() {
     const [returns, setReturns] = useState<MarketplaceReturn[]>([]);
     const [selectedReturn, setSelectedReturn] = useState<MarketplaceReturn | null>(null);
     const [history, setHistory] = useState<ReturnHistoryEvent[]>([]);
+    const [detailAnalysisItems, setDetailAnalysisItems] = useState<ReturnAnalysisItem[]>([]);
+    const [detailPhotos, setDetailPhotos] = useState<ReturnPhoto[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDetailLoading, setIsDetailLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -170,7 +327,7 @@ export default function ReturnsPage() {
         if (!loading && !user) {
             router.push("/login");
         } else if (!loading && user && userData && !canAccess) {
-            router.replace("/dash");
+            router.replace("/dashboard");
         }
     }, [canAccess, loading, router, user, userData]);
 
@@ -265,6 +422,71 @@ export default function ReturnsPage() {
         return groups;
     }, [filteredReturns]);
 
+    const detailPhotosByItemId = useMemo(() => {
+        const groups = new Map<string, ReturnPhoto[]>();
+        detailPhotos.forEach((photo) => {
+            if (!photo.itemId) return;
+            const current = groups.get(photo.itemId) || [];
+            current.push(photo);
+            groups.set(photo.itemId, current);
+        });
+        return groups;
+    }, [detailPhotos]);
+
+    const detailUnifiedItems = useMemo<UnifiedReturnItem[]>(() => {
+        const orderItems = selectedReturn?.returnItems || [];
+        const usedAnalysisIds = new Set<string>();
+        const analysisBySku = new Map<string, ReturnAnalysisItem[]>();
+
+        detailAnalysisItems.forEach((item) => {
+            const skuKey = normalizeSku(item.sku);
+            if (!skuKey) return;
+            const current = analysisBySku.get(skuKey) || [];
+            current.push(item);
+            analysisBySku.set(skuKey, current);
+        });
+
+        const unified: UnifiedReturnItem[] = orderItems.map((orderItem, index) => {
+            const sku = returnItemSkuLabel(orderItem);
+            const skuKey = normalizeSku(sku);
+            const matchedAnalysis = skuKey
+                ? (analysisBySku.get(skuKey) || []).find((item) => !usedAnalysisIds.has(item.id))
+                : undefined;
+
+            if (matchedAnalysis) usedAnalysisIds.add(matchedAnalysis.id);
+
+            return {
+                key: `order-${orderItem.id || orderItem.orderItemId || sku || index}`,
+                title: orderItem.title || matchedAnalysis?.productName || "Item sem descricao",
+                sku,
+                ean: matchedAnalysis?.ean,
+                orderItem,
+                analysisItem: matchedAnalysis,
+                photos: matchedAnalysis ? detailPhotosByItemId.get(matchedAnalysis.id) || [] : [],
+                source: "order",
+            };
+        });
+
+        detailAnalysisItems.forEach((item) => {
+            if (usedAnalysisIds.has(item.id)) return;
+            unified.push({
+                key: `mobile-${item.id}`,
+                title: item.productName || "Produto sem descricao",
+                sku: item.sku || "-",
+                ean: item.ean,
+                analysisItem: item,
+                photos: detailPhotosByItemId.get(item.id) || [],
+                source: "mobile",
+            });
+        });
+
+        return unified;
+    }, [detailAnalysisItems, detailPhotosByItemId, selectedReturn?.returnItems]);
+
+    const detailProblemItems = useMemo(() => {
+        return detailUnifiedItems.filter((item) => analysisHasIssue(item.analysisItem));
+    }, [detailUnifiedItems]);
+
     const openCreateForm = () => {
         setEditingReturn(null);
         setForm({
@@ -295,6 +517,8 @@ export default function ReturnsPage() {
         if (!user) return;
         setSelectedReturn(item);
         setIsDetailMenuOpen(false);
+        setDetailAnalysisItems([]);
+        setDetailPhotos([]);
         setIsDetailLoading(true);
         try {
             const token = await user.getIdToken();
@@ -305,6 +529,8 @@ export default function ReturnsPage() {
             if (!response.ok) throw new Error(data.error || "Erro ao buscar detalhes");
             setSelectedReturn(data.return);
             setHistory(Array.isArray(data.history) ? data.history : []);
+            setDetailAnalysisItems(Array.isArray(data.analysisItems) ? data.analysisItems : []);
+            setDetailPhotos(Array.isArray(data.photos) ? data.photos : []);
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : "Erro ao buscar detalhes";
             showAlert("Erro", message, "error");
@@ -440,6 +666,8 @@ export default function ReturnsPage() {
             if (selectedReturn?.id === item.id) {
                 setSelectedReturn(null);
                 setHistory([]);
+                setDetailAnalysisItems([]);
+                setDetailPhotos([]);
             }
             showToast("Devolução apagada com sucesso.");
         } catch (error: unknown) {
@@ -928,6 +1156,25 @@ export default function ReturnsPage() {
                                                             <span className="block max-h-9 overflow-hidden">{item.pendingIssue}</span>
                                                         </div>
                                                     )}
+                                                    {item.analysisSummary && (
+                                                        <div className="flex flex-wrap gap-2 text-xs">
+                                                            {item.analysisSummary.problemItems > 0 ? (
+                                                                <span className="rounded-md border border-orange-100 bg-orange-50 px-2 py-1 font-bold text-orange-700">
+                                                                    {item.analysisSummary.problemItems} problema(s)
+                                                                </span>
+                                                            ) : null}
+                                                            {item.analysisSummary.manuallyAddedItems > 0 ? (
+                                                                <span className="rounded-md border border-blue-100 bg-blue-50 px-2 py-1 font-bold text-[#2d3277]">
+                                                                    {item.analysisSummary.manuallyAddedItems} item(ns) adicionados
+                                                                </span>
+                                                            ) : null}
+                                                            {item.analysisSummary.photoCount > 0 ? (
+                                                                <span className="rounded-md border border-gray-100 bg-gray-50 px-2 py-1 font-bold text-gray-600">
+                                                                    {item.analysisSummary.photoCount} foto(s)
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    )}
                                                     {renderQuickActions(item, "card")}
                                                 </div>
                                             </article>
@@ -1193,6 +1440,8 @@ export default function ReturnsPage() {
                                     onClick={() => {
                                         setSelectedReturn(null);
                                         setHistory([]);
+                                        setDetailAnalysisItems([]);
+                                        setDetailPhotos([]);
                                         setIsDetailMenuOpen(false);
                                     }}
                                     className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
@@ -1302,6 +1551,22 @@ export default function ReturnsPage() {
                                 <div className="bg-white border border-gray-100 rounded-xl p-4">
                                     <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-3">
                                         <PackageOpen className="w-4 h-4 text-[#2d3277]" />
+                                        Itens do pedido e conferencia
+                                    </h3>
+                                    {detailUnifiedItems.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {detailUnifiedItems.map((item) => (
+                                                <UnifiedReturnItemCard key={item.key} item={item} />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-gray-400">Nenhum item informado.</p>
+                                    )}
+                                </div>
+
+                                <div className="hidden bg-white border border-gray-100 rounded-xl p-4">
+                                    <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-3">
+                                        <PackageOpen className="w-4 h-4 text-[#2d3277]" />
                                         Itens devolvidos
                                     </h3>
                                     {selectedReturn.returnItems && selectedReturn.returnItems.length > 0 ? (
@@ -1349,6 +1614,7 @@ export default function ReturnsPage() {
                                 </div>
 
                                 {(selectedReturn.pendingIssue ||
+                                    detailProblemItems.length > 0 ||
                                     selectedReturn.status === "pending_dispute_or_refund" ||
                                     selectedReturn.status === "waiting_dispute_or_refund") && (
                                     <div className="bg-white border border-blue-100 rounded-xl p-4">
@@ -1368,6 +1634,19 @@ export default function ReturnsPage() {
                                         <p className="text-sm text-[#2d3277] whitespace-pre-wrap">
                                             {selectedReturn.pendingIssue || "Nenhuma pendência registrada."}
                                         </p>
+                                        {detailProblemItems.length > 0 ? (
+                                            <div className="mt-4 border-t border-blue-100 pt-4">
+                                                <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900">
+                                                    <AlertTriangle className="w-4 h-4 text-orange-600" />
+                                                    Problemas da conferencia
+                                                </h4>
+                                                <div className="space-y-3">
+                                                    {detailProblemItems.map((item) => (
+                                                        <UnifiedReturnItemCard key={`pending-${item.key}`} item={item} />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 )}
 

@@ -12,6 +12,7 @@ import {
     RETURN_STATUS_LABELS,
 } from "@/lib/returns";
 import { decryptToken } from "@/server/utils/crypto";
+import { indexReturnIdentifiers } from "@/server/returns/mobile";
 import { AnymarketClient } from "./anymarket-client";
 import { AnymarketIntegrationStatus } from "./anymarket-types";
 
@@ -1258,6 +1259,7 @@ async function processAnyMarketReturnEvent(
                 })
             );
             await batch.commit();
+            await indexReturnIdentifiers(accountId, returnRef.id, returnData as MarketplaceReturn, "integration");
 
             const message = "Devolucao criada automaticamente via AnyMarket.";
             await markLog(accountId, logRef.id, idempotencyHash, "processed", message, { returnId: returnRef.id });
@@ -1345,6 +1347,18 @@ async function processAnyMarketReturnEvent(
             })
         );
         await batch.commit();
+        await indexReturnIdentifiers(
+            accountId,
+            existingReturn.ref.id,
+            {
+                ...current,
+                ...updateData,
+                returnType: shouldUpdateReturnType ? inferredReturnType : current.returnType,
+                orderNumber: shouldUpdateOrderNumber ? event.orderNumber : current.orderNumber,
+                status: nextStatus || current.status,
+            } as MarketplaceReturn,
+            "integration"
+        );
 
         await markLog(accountId, logRef.id, idempotencyHash, "processed", message, { returnId: existingReturn.ref.id });
         return {

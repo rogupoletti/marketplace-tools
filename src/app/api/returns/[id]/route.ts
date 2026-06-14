@@ -1,12 +1,16 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import {
+    ReturnAnalysisItem,
     MarketplaceReturn,
     ReturnHistoryAction,
     ReturnHistoryEvent,
+    ReturnPhoto,
     RETURN_STATUS_LABELS,
 } from "@/lib/returns";
 import { getReturnsAccess } from "@/server/returns/access";
+import { normalizeReturnIdentifier } from "@/server/returns/mobile";
 import { parseReturnUpdatePayload } from "@/server/returns/validation";
 
 function withoutUndefined<T extends Record<string, unknown>>(data: T): T {
@@ -17,6 +21,15 @@ function withoutUndefined<T extends Record<string, unknown>>(data: T): T {
 
 interface RouteContext {
     params: Promise<{ id: string }>;
+}
+
+function identifierDocId(normalizedCode: string) {
+    if (!normalizedCode.includes("/") && normalizedCode.length <= 900) return normalizedCode;
+    return `sha256_${createHash("sha256").update(normalizedCode).digest("hex")}`;
+}
+
+function isManualReturn(data: MarketplaceReturn) {
+    return !data.source || data.source === "manual" || data.source === "manual_mobile_creation" || data.createdManually === true;
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -38,19 +51,39 @@ export async function GET(request: NextRequest, context: RouteContext) {
             return NextResponse.json({ error: "Devolução não encontrada" }, { status: 404 });
         }
 
-        const historySnapshot = await returnRef
-            .collection("history")
-            .orderBy("createdAt", "desc")
-            .get();
+        const [historySnapshot, analysisItemsSnapshot, photosSnapshot] = await Promise.all([
+            returnRef
+                .collection("history")
+                .orderBy("createdAt", "desc")
+                .get(),
+            returnRef
+                .collection("analysisItems")
+                .orderBy("createdAt", "asc")
+                .get(),
+            returnRef
+                .collection("photos")
+                .orderBy("createdAt", "asc")
+                .get(),
+        ]);
 
         const history = historySnapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
         })) as ReturnHistoryEvent[];
+        const analysisItems = analysisItemsSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as ReturnAnalysisItem[];
+        const photos = photosSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as ReturnPhoto[];
 
         return NextResponse.json({
             return: { id: returnDoc.id, ...returnDoc.data() } as MarketplaceReturn,
             history,
+            analysisItems,
+            photos,
         });
     } catch (error: unknown) {
         console.error("Erro ao buscar devolucao:", error);
@@ -173,21 +206,70 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         }
 
         const data = returnDoc.data() as MarketplaceReturn;
-        if (data.source && data.source !== "manual") {
+        if (!isManualReturn(data)) {
             return NextResponse.json({ error: "Apenas devoluções manuais podem ser apagadas" }, { status: 403 });
         }
 
-        const historySnapshot = await returnRef.collection("history").get();
+        const [historySnapshot, analysisItemsSnapshot, photosSnapshot] = await Promise.all([
+            returnRef.collection("history").get(),
+            returnRef.collection("analysisItems").get(),
+            returnRef.collection("photos").get(),
+        ]);
         let batch = adminDb.batch();
         let count = 0;
 
-        for (const historyDoc of historySnapshot.docs) {
-            batch.delete(historyDoc.ref);
-            count++;
+        const commitIfNeeded = async () => {
             if (count >= 400) {
                 await batch.commit();
                 batch = adminDb.batch();
                 count = 0;
+            }
+        };
+
+        const queueDelete = async (docRef: FirebaseFirestore.DocumentReference) => {
+            batch.delete(docRef);
+            count++;
+            await commitIfNeeded();
+        };
+
+        for (const historyDoc of historySnapshot.docs) {
+            await queueDelete(historyDoc.ref);
+        }
+
+        for (const itemDoc of analysisItemsSnapshot.docs) {
+            await queueDelete(itemDoc.ref);
+        }
+
+        for (const photoDoc of photosSnapshot.docs) {
+            await queueDelete(photoDoc.ref);
+        }
+
+        const normalizedIdentifiers = Array.from(
+            new Set((data.identifiers || []).map(normalizeReturnIdentifier).filter(Boolean))
+        );
+
+        for (const identifier of normalizedIdentifiers) {
+            const indexRef = adminDb
+                .collection("accounts")
+                .doc(accountId)
+                .collection("returnIdentifierIndex")
+                .doc(identifierDocId(identifier));
+            const indexDoc = await indexRef.get();
+            if (!indexDoc.exists) continue;
+
+            const indexData = indexDoc.data() || {};
+            const currentMatches = Array.isArray(indexData.matches) ? indexData.matches : [];
+            const nextMatches = currentMatches.filter((match) => match?.returnId !== id);
+
+            if (nextMatches.length === 0) {
+                await queueDelete(indexRef);
+            } else if (nextMatches.length !== currentMatches.length) {
+                batch.set(indexRef, {
+                    matches: nextMatches,
+                    updatedAt: new Date().toISOString(),
+                }, { merge: true });
+                count++;
+                await commitIfNeeded();
             }
         }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import Header from "./Header";
 import Footer from "./Footer";
@@ -8,6 +9,8 @@ import AuthenticatedLayout from "./AuthenticatedLayout";
 
 export default function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();
+    const pathname = usePathname();
+    const isMobileReturnRoute = pathname?.startsWith("/returns/mobile");
 
     if (loading) {
         return (
@@ -18,6 +21,10 @@ export default function MainLayoutWrapper({ children }: { children: React.ReactN
                 </div>
             </div>
         );
+    }
+
+    if (isMobileReturnRoute) {
+        return <>{children}</>;
     }
 
     if (user) {

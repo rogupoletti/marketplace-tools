@@ -1,5 +1,5 @@
 export const RETURN_CHANNELS = ["meli", "shopee", "ecommerce", "other"] as const;
-export const RETURN_TYPES = ["full", "flex", "ecommerce", "other"] as const;
+export const RETURN_TYPES = ["full", "full_meli_cd", "full_shopee_cd", "flex", "ecommerce", "other"] as const;
 export const RETURN_STATUSES = [
     "on_the_way",
     "pending_analysis",
@@ -9,12 +9,89 @@ export const RETURN_STATUSES = [
     "resolved",
     "cancelled",
 ] as const;
+export const RETURN_MARKETPLACES = ["mercado_livre", "shopee", "amazon", "magalu", "ecommerce", "other", "unknown"] as const;
+export const MOBILE_SCAN_TYPES = ["qr_code", "barcode", "manual"] as const;
+export const RETURN_ANALYSIS_ITEM_STATUSES = ["ok", "problem", "not_received", "wrong_product", "partial"] as const;
+export const RETURN_PROBLEM_TYPES = [
+    "damaged",
+    "package_violated",
+    "missing_part",
+    "used_product",
+    "wrong_product",
+    "expired_product",
+    "partial_quantity",
+    "not_resellable",
+    "other",
+] as const;
+export const RETURN_PHOTO_TYPES = ["label", "package", "problem", "wrong_product"] as const;
+export const RETURN_ANALYSIS_DISPOSITIONS = ["resolve", "dispute", "refund", "pending_return_invoice"] as const;
 
 export type ReturnChannel = (typeof RETURN_CHANNELS)[number];
 export type ReturnType = (typeof RETURN_TYPES)[number];
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
-export type ReturnSource = "manual" | "anymarket";
-export type ReturnHistoryOrigin = "manual" | "anymarket_webhook";
+export type ReturnMarketplace = (typeof RETURN_MARKETPLACES)[number];
+export type MobileScanType = (typeof MOBILE_SCAN_TYPES)[number];
+export type ReturnAnalysisItemStatus = (typeof RETURN_ANALYSIS_ITEM_STATUSES)[number];
+export type ReturnProblemType = (typeof RETURN_PROBLEM_TYPES)[number];
+export type ReturnPhotoType = (typeof RETURN_PHOTO_TYPES)[number];
+export type ReturnAnalysisDisposition = (typeof RETURN_ANALYSIS_DISPOSITIONS)[number];
+export type ReturnSource = "manual" | "anymarket" | "manual_mobile_creation";
+export type ReturnHistoryOrigin = "manual" | "anymarket_webhook" | "mobile_return_analysis";
+
+export interface MobileReturnScan {
+    rawValue: string;
+    normalizedValue: string;
+    scanType: MobileScanType;
+    scannedAt: string;
+    source: "mobile_return_analysis";
+}
+
+export interface ReturnIdentifierIndexMatch {
+    returnId: string;
+    type: "barcode" | "qr_payload" | "tracking" | "pack_id" | "order_id" | "return_id" | "shipment_id" | "manual";
+    marketplace: ReturnMarketplace;
+    source: "integration" | "operator_scan" | "manual_link" | "manual_return_creation";
+}
+
+export interface ReturnAnalysisItem {
+    id: string;
+    returnId: string;
+    sku: string;
+    productName: string;
+    ean?: string;
+    expectedQty: number;
+    receivedQty: number;
+    status: ReturnAnalysisItemStatus;
+    problemTypes: ReturnProblemType[];
+    notes?: string;
+    addedManually: boolean;
+    analyzedBy?: string;
+    analyzedAt?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ReturnPhoto {
+    id: string;
+    returnId: string;
+    itemId?: string;
+    type: ReturnPhotoType;
+    storagePath: string;
+    downloadUrl: string;
+    downloadToken?: string;
+    contentType?: string;
+    createdBy?: string;
+    createdAt: string;
+}
+
+export interface ReturnAnalysisSummaryData {
+    expectedItems: number;
+    okItems: number;
+    problemItems: number;
+    notReceivedItems: number;
+    manuallyAddedItems: number;
+    photoCount: number;
+}
 
 export type ReturnHistoryAction =
     | "created"
@@ -53,6 +130,11 @@ export interface MarketplaceReturn {
     trackingCode?: string;
     trackingUrl?: string;
     trackingUpdatedAt?: string;
+    shipmentId?: string;
+    packId?: string;
+    labelBarcode?: string;
+    labelQrPayload?: string;
+    identifiers?: string[];
     reverseShippingId?: string;
     reverseTrackingCode?: string;
     reverseTrackingNumber?: string;
@@ -66,6 +148,23 @@ export interface MarketplaceReturn {
     expectedArrivalDate?: string;
     notes?: string;
     pendingIssue?: string;
+    labelInfo?: {
+        rawScanPayload?: string;
+        normalizedScanValue?: string;
+        scanType?: MobileScanType;
+        labelPhotoPath?: string;
+        labelPhotoUrl?: string;
+        detectedMarketplace?: ReturnMarketplace;
+    };
+    createdManually?: boolean;
+    createdFromMobile?: boolean;
+    analysisSummary?: ReturnAnalysisSummaryData;
+    analysisDisposition?: ReturnAnalysisDisposition;
+    analysisGeneralNotes?: string;
+    analysisLocked?: boolean;
+    analysisCompletedAt?: string;
+    analysisCompletedByUid?: string;
+    analysisCompletedByEmail?: string;
     createdAt: string;
     updatedAt: string;
     createdByUid?: string;
@@ -113,6 +212,8 @@ export const RETURN_CHANNEL_LABELS: Record<ReturnChannel, string> = {
 
 export const RETURN_TYPE_LABELS: Record<ReturnType, string> = {
     full: "Full",
+    full_meli_cd: "Full - CD MELI",
+    full_shopee_cd: "Full - CD Shopee",
     flex: "Flex",
     ecommerce: "Ecommerce",
     other: "Outro",
@@ -121,6 +222,7 @@ export const RETURN_TYPE_LABELS: Record<ReturnType, string> = {
 export const RETURN_SOURCE_LABELS: Record<ReturnSource, string> = {
     manual: "Manual",
     anymarket: "AnyMarket",
+    manual_mobile_creation: "Manual mobile",
 };
 
 export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
