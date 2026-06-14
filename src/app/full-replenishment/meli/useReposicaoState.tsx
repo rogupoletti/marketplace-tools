@@ -214,7 +214,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         if (!user) return;
         try {
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/cadastros/products", {
+            const res = await fetch("/api/catalog/products", {
                 headers: { "Authorization": `Bearer ${idToken}` }
             });
             const data = await res.json();
@@ -259,7 +259,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         setIsFetchingSales(true);
         try {
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/reposicao-full/sales", {
+            const res = await fetch("/api/full-replenishment/sales", {
                 headers: { "Authorization": `Bearer ${idToken}` }
             });
             const data = await res.json();
@@ -314,7 +314,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
         if (user) {
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/cadastros/products", {
+            const res = await fetch("/api/catalog/products", {
                 method: "PATCH",
                 headers: {
                     "Content-Type": "application/json",
@@ -376,7 +376,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
 
         if (user) {
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/cadastros/products", {
+            const res = await fetch("/api/catalog/products", {
                 method: "PATCH",
                 headers: {
                     "Content-Type": "application/json",

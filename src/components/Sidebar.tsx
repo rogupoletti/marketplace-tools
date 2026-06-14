@@ -63,7 +63,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
     const isAdmin = userData?.isAdmin || userData?.role === "superadmin" || userData?.role === "account_admin";
     const actualCalculadorasOpen = isCalculadorasOpen || pathname.includes("/shopee") || pathname.includes("/meli") || pathname.includes("/amazon");
     const actualIntegracoesOpen = isIntegracoesOpen || pathname.includes("/integrations");
-    const actualReposFullOpen = isReposFullOpen || pathname.includes("/reposicao-full");
+    const actualReposFullOpen = isReposFullOpen || pathname.includes("/full-replenishment");
 
     const navItems: NavSection[] = [
         {
@@ -76,12 +76,12 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                     isOpen: actualReposFullOpen,
                     toggle: () => setIsReposFullOpen(!isReposFullOpen),
                     subItems: [
-                        { name: "Mercado Livre", href: "/reposicao-full/meli" },
-                        { name: "Shopee", href: "/reposicao-full/shopee" },
+                        { name: "Mercado Livre", href: "/full-replenishment/meli" },
+                        { name: "Shopee", href: "/full-replenishment/shopee" },
                     ],
                 },
-                { name: "Cadastros", href: "/cadastros", icon: LayoutDashboard },
-                { name: "Relatórios", href: "/dash", icon: BarChart3 },
+                { name: "Cadastros", href: "/catalog", icon: LayoutDashboard },
+                { name: "Relatórios", href: "/dashboard", icon: BarChart3 },
             ],
         },
         {

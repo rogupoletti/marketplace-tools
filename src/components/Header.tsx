@@ -92,7 +92,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
                     </div>
 
                     {user && (
-                        <Link href="/reposicao-full" className="text-sm font-medium text-gray-600 hover:text-[#2d3277] transition-colors cursor-pointer h-full flex items-center px-1">
+                        <Link href="/full-replenishment/meli" className="text-sm font-medium text-gray-600 hover:text-[#2d3277] transition-colors cursor-pointer h-full flex items-center px-1">
                             Reposição Full
                         </Link>
                     )}
@@ -101,7 +101,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
 
                     {user ? (
                         <>
-                            <Link href="/dash" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer">Meus Relatórios</Link>
+                            <Link href="/dashboard" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer">Meus Relatórios</Link>
                             {(userData?.isAdmin || userData?.role === 'superadmin' || userData?.role === 'account_admin') && (
                                 <Link href="/admin" className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors cursor-pointer">Admin</Link>
                             )}
@@ -155,7 +155,7 @@ export default function Header({ brand = "default" }: HeaderProps) {
                             {user ? (
                                 <>
                                     <Link
-                                        href="/dash"
+                                        href="/dashboard"
                                         onClick={() => setIsMenuOpen(false)}
                                         className="block px-3 py-2 rounded-md text-base font-bold text-blue-600 hover:bg-gray-50 cursor-pointer"
                                     >

@@ -33,7 +33,7 @@ export function ReposicaoFullContent() {
             if (!user) {
                 router.push("/login");
             } else if (userData?.role === 'subaccount_user') {
-                router.push("/dash");
+                router.push("/dashboard");
             }
         }
     }, [user, loading, router, userData]);

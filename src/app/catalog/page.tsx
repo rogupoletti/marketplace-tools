@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useUI } from "@/lib/ui-context";
 import { Search, Package, ChevronLeft, ChevronRight, Upload, Download, Pencil, X } from "lucide-react";
 import { utils, writeFile } from "xlsx";
-import { parseCadastrosExcel } from "@/app/reposicao-full/excel-utils";
+import { parseCadastrosExcel } from "@/app/full-replenishment/excel-utils";
 
 type MarketplaceKey = "mercadolivre" | "shopee";
 
@@ -127,7 +127,7 @@ export default function CadastrosPage() {
             setIsLoading(true);
             try {
                 const token = await user.getIdToken();
-                const res = await fetch("/api/cadastros/products", {
+                const res = await fetch("/api/catalog/products", {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
                 const result = await res.json() as ProductsResult;
@@ -183,7 +183,7 @@ export default function CadastrosPage() {
             const token = await user?.getIdToken();
             if (!token) throw new Error("Usuário não autenticado");
 
-            const res = await fetch("/api/cadastros/upload", {
+            const res = await fetch("/api/catalog/upload", {
                 method: "POST",
                 headers: { 
                     "Content-Type": "application/json",
@@ -280,7 +280,7 @@ export default function CadastrosPage() {
         setIsSavingProduct(true);
         try {
             const token = await user.getIdToken();
-            const res = await fetch("/api/cadastros/products", {
+            const res = await fetch("/api/catalog/products", {
                 method: "PATCH",
                 headers: {
                     "Content-Type": "application/json",

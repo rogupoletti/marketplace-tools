@@ -103,7 +103,7 @@ export default function AnymarketIntegrationPage() {
             if (!user) {
                 router.push("/login");
             } else if (userData?.role !== 'superadmin' && userData?.role !== 'account_admin') {
-                router.push("/dash");
+                router.push("/dashboard");
             } else {
                 fetchStatus();
             }

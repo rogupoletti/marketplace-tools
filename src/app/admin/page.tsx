@@ -336,7 +336,7 @@ export default function AdminDashboard() {
             <div className="min-h-screen flex items-center justify-center bg-[#f5f7fa] px-4">
                 <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">Acesso Negado</h1>
-                    <button onClick={() => router.push("/dash")} className="mt-4 bg-blue-600 text-white py-2 px-4 rounded cursor-pointer transition-colors hover:bg-blue-700">Ir para Dash</button>
+                    <button onClick={() => router.push("/dashboard")} className="mt-4 bg-blue-600 text-white py-2 px-4 rounded cursor-pointer transition-colors hover:bg-blue-700">Ir para Dash</button>
                 </div>
             </div>
         );
