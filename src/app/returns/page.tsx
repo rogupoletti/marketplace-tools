@@ -1150,7 +1150,7 @@ export default function ReturnsPage() {
 
                 {isFiltersOpen && (
                     <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
                     <label className="block">
                         <span className="text-[11px] font-bold text-gray-400 uppercase">Canal</span>
                         <select
@@ -1191,29 +1191,6 @@ export default function ReturnsPage() {
                                 <option key={status} value={status}>{RETURN_STATUS_LABELS[status]}</option>
                             ))}
                         </select>
-                    </label>
-
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">Pedido</span>
-                        <div className="relative mt-1">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                value={filters.orderNumber}
-                                onChange={(event) => setFilters((current) => ({ ...current, orderNumber: event.target.value }))}
-                                placeholder="Número"
-                                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
-                            />
-                        </div>
-                    </label>
-
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">Nota fiscal</span>
-                        <input
-                            value={filters.invoiceNumber}
-                            onChange={(event) => setFilters((current) => ({ ...current, invoiceNumber: event.target.value }))}
-                            placeholder="NF"
-                            className="mt-1 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
-                        />
                     </label>
 
                     <label className="block">
