@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -115,6 +115,76 @@ function formatDateTime(value: string) {
         hour: "2-digit",
         minute: "2-digit",
     });
+}
+
+interface MatchDetails {
+    matched: boolean;
+    fieldName?: string;
+    fieldValue?: string;
+}
+
+function getMatchDetails(item: MarketplaceReturn, query: string, field: string): MatchDetails {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return { matched: false };
+
+    const match = (val: string | undefined | null) => {
+        if (!val) return false;
+        return val.toLowerCase().includes(q);
+    };
+
+    const checkField = (val: string | undefined | null, name: string) => {
+        if (match(val)) {
+            return { matched: true, fieldName: name, fieldValue: val! };
+        }
+        return null;
+    };
+
+    if (field === "order") {
+        const m = checkField(item.orderNumber, "Pedido") || 
+                  checkField(item.externalOrderId, "Pedido") || 
+                  checkField(item.marketplaceOrderId, "Pedido");
+        return m || { matched: false };
+    }
+
+    if (field === "tracking") {
+        const m = checkField(item.reverseTrackingCode, "Rastreio") || 
+                  checkField(item.trackingCode, "Rastreio") || 
+                  checkField(item.reverseTrackingNumber, "Rastreio");
+        return m || { matched: false };
+    }
+
+    if (field === "invoice") {
+        const m = checkField(item.invoiceNumber, "Nota Fiscal");
+        return m || { matched: false };
+    }
+
+    if (field === "returnId") {
+        if (match(item.marketplaceReturnId) || match(item.externalReturnId) || match(item.id)) {
+            return { matched: true };
+        }
+        return { matched: false };
+    }
+
+    if (field === "all") {
+        if (match(item.marketplaceReturnId) || match(item.id) || match(item.externalReturnId)) {
+            return { matched: true };
+        }
+        
+        const others = checkField(item.customerName, "Cliente") ||
+                       checkField(item.orderNumber, "Pedido") ||
+                       checkField(item.reverseTrackingCode, "Rastreio") ||
+                       checkField(item.invoiceNumber, "Nota Fiscal") ||
+                       checkField(item.externalOrderId, "Pedido") ||
+                       checkField(item.marketplaceOrderId, "Pedido") ||
+                       checkField(item.trackingCode, "Rastreio") ||
+                       checkField(item.reverseTrackingNumber, "Rastreio") ||
+                       checkField(item.shipmentId, "Envio") ||
+                       checkField(item.packId, "Pacote");
+                       
+        return others || { matched: false };
+    }
+
+    return { matched: false };
 }
 
 function sourceLabel(item: MarketplaceReturn) {
@@ -313,6 +383,39 @@ export default function ReturnsPage() {
         dateTo: "",
     });
 
+    const [searchField, setSearchField] = useState("all");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const searchRef = useRef<HTMLDivElement>(null);
+
+    const suggestions = useMemo(() => {
+        if (searchQuery.trim().length < 2) return [];
+        return returns
+            .map((item) => {
+                const details = getMatchDetails(item, searchQuery, searchField);
+                return { item, details };
+            })
+            .filter(({ details }) => details.matched)
+            .slice(0, 20);
+    }, [returns, searchQuery, searchField]);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const handleSelectSuggestion = (item: MarketplaceReturn) => {
+        fetchReturnDetail(item);
+        setSearchQuery("");
+        setShowSuggestions(false);
+    };
     const isSuper = userData?.role === "superadmin" || userData?.isAdmin === true;
     const canAccess =
         userData?.role === "superadmin" ||
@@ -920,12 +1023,123 @@ export default function ReturnsPage() {
             </div>
 
             <section className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 mb-5">
-                <div className={`flex items-center justify-between gap-3 ${isFiltersOpen ? "mb-4" : ""}`}>
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                        <Search className="w-4 h-4 text-[#2d3277]" />
+                        <h2 className="text-sm font-bold text-gray-800">Busca</h2>
+                    </div>
+                    
+                    <div ref={searchRef} className="relative flex items-center border border-gray-200 rounded-lg bg-gray-50 focus-within:ring-2 focus-within:ring-[#2d3277]/20 focus-within:border-[#2d3277]/30 transition-all w-full max-w-xl">
+                        <select
+                            aria-label="Tipo de busca"
+                            value={searchField}
+                            onChange={(e) => setSearchField(e.target.value)}
+                            className="bg-transparent border-r border-gray-200 rounded-l-lg py-1.5 pl-3 pr-8 text-xs text-gray-500 font-semibold focus:outline-none focus:ring-0 cursor-pointer h-full outline-none"
+                        >
+                            <option value="all">Todos</option>
+                            <option value="order">Pedido</option>
+                            <option value="tracking">Rastreio</option>
+                            <option value="invoice">Nota Fiscal</option>
+                            <option value="returnId">ID Devolução</option>
+                        </select>
+                        <div className="relative flex-1 flex items-center">
+                            <input
+                                type="text"
+                                placeholder="Buscar devolução..."
+                                value={searchQuery}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSearchQuery(val);
+                                    setShowSuggestions(val.trim().length >= 2);
+                                }}
+                                onFocus={() => {
+                                    if (searchQuery.trim().length >= 2) {
+                                        setShowSuggestions(true);
+                                    }
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Escape") {
+                                        setShowSuggestions(false);
+                                    }
+                                }}
+                                className="bg-transparent flex-1 py-1.5 pl-3 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 outline-none w-full"
+                            />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchQuery("");
+                                        setShowSuggestions(false);
+                                    }}
+                                    aria-label="Limpar busca"
+                                    className="absolute right-2.5 text-gray-400 hover:text-gray-600 focus:outline-none"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+
+                        {showSuggestions && searchQuery.trim().length >= 2 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-64 divide-y divide-gray-100">
+                                {suggestions.length === 0 ? (
+                                    <div className="p-4 text-sm text-gray-500 text-center">
+                                        Nenhuma devolução encontrada para &apos;{searchQuery}&apos;
+                                    </div>
+                                ) : (
+                                    suggestions.map(({ item, details }) => (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => handleSelectSuggestion(item)}
+                                            className="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer transition-colors focus:bg-gray-50 outline-none"
+                                        >
+                                            <div className="flex items-center">
+                                                {item.channel === "meli" ? (
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-200">
+                                                        Meli
+                                                    </span>
+                                                ) : item.channel === "shopee" ? (
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+                                                        Shopee
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-200">
+                                                        {item.channel || "Outro"}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0 mx-3 text-left">
+                                                <div className="text-sm font-bold text-gray-900 truncate">
+                                                    {item.marketplaceReturnId || item.id}
+                                                </div>
+                                                <div className="text-xs text-gray-500 truncate">
+                                                    Pedido: {item.orderNumber} · Cliente: {item.customerName}
+                                                </div>
+                                                {details.fieldName && details.fieldValue && (
+                                                    <div className="text-xs text-indigo-600 font-medium mt-0.5 truncate">
+                                                        {details.fieldName}: {details.fieldValue}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-gray-400 font-medium whitespace-nowrap">
+                                                {formatDate(item.returnDate)}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </section>
+
+            <section className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 mb-5">
+                <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-[#2d3277]" />
                         <h2 className="text-sm font-bold text-gray-800">Filtros</h2>
                         <span className="text-xs text-gray-400">{filteredReturns.length} de {returns.length} devoluções</span>
                     </div>
+
                     <button
                         onClick={() => setIsFiltersOpen((current) => !current)}
                         className="px-3 py-1.5 text-sm font-semibold text-[#2d3277] hover:bg-blue-50 rounded-lg"
@@ -935,7 +1149,7 @@ export default function ReturnsPage() {
                 </div>
 
                 {isFiltersOpen && (
-                    <>
+                    <div className="mt-4 pt-4 border-t border-gray-100">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3">
                     <label className="block">
                         <span className="text-[11px] font-bold text-gray-400 uppercase">Canal</span>
@@ -1032,7 +1246,7 @@ export default function ReturnsPage() {
                         Limpar filtros
                     </button>
                 </div>
-                    </>
+                    </div>
                 )}
             </section>
 
