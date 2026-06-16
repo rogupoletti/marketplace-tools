@@ -1029,7 +1029,7 @@ export default function ReturnsPage() {
                         <h2 className="text-sm font-bold text-gray-800">Busca</h2>
                     </div>
                     
-                    <div ref={searchRef} className="relative flex items-center border border-gray-200 rounded-lg bg-gray-50 focus-within:ring-2 focus-within:ring-[#2d3277]/20 focus-within:border-[#2d3277]/30 transition-all w-full max-w-xl">
+                    <div ref={searchRef} className="relative flex items-center border border-gray-200 rounded-lg bg-gray-50 focus-within:ring-2 focus-within:ring-[#2d3277]/20 focus-within:border-[#2d3277]/30 transition-all w-full max-w-3xl">
                         <select
                             aria-label="Tipo de busca"
                             value={searchField}
@@ -1077,57 +1077,57 @@ export default function ReturnsPage() {
                                     <X className="w-4 h-4" />
                                 </button>
                             )}
-                        </div>
 
-                        {showSuggestions && searchQuery.trim().length >= 2 && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-64 divide-y divide-gray-100">
-                                {suggestions.length === 0 ? (
-                                    <div className="p-4 text-sm text-gray-500 text-center">
-                                        Nenhuma devolução encontrada para &apos;{searchQuery}&apos;
-                                    </div>
-                                ) : (
-                                    suggestions.map(({ item, details }) => (
-                                        <div
-                                            key={item.id}
-                                            onClick={() => handleSelectSuggestion(item)}
-                                            className="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer transition-colors focus:bg-gray-50 outline-none"
-                                        >
-                                            <div className="flex items-center">
-                                                {item.channel === "meli" ? (
-                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-200">
-                                                        Meli
-                                                    </span>
-                                                ) : item.channel === "shopee" ? (
-                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
-                                                        Shopee
-                                                    </span>
-                                                ) : (
-                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-200">
-                                                        {item.channel || "Outro"}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 min-w-0 mx-3 text-left">
-                                                <div className="text-sm font-bold text-gray-900 truncate">
-                                                    {item.marketplaceReturnId || item.id}
-                                                </div>
-                                                <div className="text-xs text-gray-500 truncate">
-                                                    Pedido: {item.orderNumber} · Cliente: {item.customerName}
-                                                </div>
-                                                {details.fieldName && details.fieldValue && (
-                                                    <div className="text-xs text-indigo-600 font-medium mt-0.5 truncate">
-                                                        {details.fieldName}: {details.fieldValue}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="text-xs text-gray-400 font-medium whitespace-nowrap">
-                                                {formatDate(item.returnDate)}
-                                            </div>
+                            {showSuggestions && searchQuery.trim().length >= 2 && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-64 divide-y divide-gray-100">
+                                    {suggestions.length === 0 ? (
+                                        <div className="p-4 text-sm text-gray-500 text-center">
+                                            Nenhuma devolução encontrada para &apos;{searchQuery}&apos;
                                         </div>
-                                    ))
-                                )}
-                            </div>
-                        )}
+                                    ) : (
+                                        suggestions.map(({ item, details }) => (
+                                            <div
+                                                key={item.id}
+                                                onClick={() => handleSelectSuggestion(item)}
+                                                className="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer transition-colors focus:bg-gray-50 outline-none"
+                                            >
+                                                <div className="flex items-center">
+                                                    {item.channel === "meli" ? (
+                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-200">
+                                                            Meli
+                                                        </span>
+                                                    ) : item.channel === "shopee" ? (
+                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+                                                            Shopee
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-200">
+                                                            {item.channel || "Outro"}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0 mx-3 text-left">
+                                                    <div className="text-sm font-bold text-gray-900 truncate">
+                                                        {item.marketplaceReturnId || item.id}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 truncate">
+                                                        Pedido: {item.orderNumber} · Cliente: {item.customerName}
+                                                    </div>
+                                                    {details.fieldName && details.fieldValue && (
+                                                        <div className="text-xs text-indigo-600 font-medium mt-0.5 truncate">
+                                                            {details.fieldName}: {details.fieldValue}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-gray-400 font-medium whitespace-nowrap">
+                                                    {formatDate(item.returnDate)}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </section>
