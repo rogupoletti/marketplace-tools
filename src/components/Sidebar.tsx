@@ -113,6 +113,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                     toggle: () => setIsIntegracoesOpen(!isIntegracoesOpen),
                     subItems: [
                         { name: "Anymarket", href: "/integrations/anymarket" },
+                        { name: "Tray", href: "/integrations/tray" },
                         { name: "Mercado Livre", href: "/integrations/mercadolivre" },
                     ],
                 },
