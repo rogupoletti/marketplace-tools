@@ -9,6 +9,7 @@ import {
     Camera,
     CheckCircle2,
     ClipboardList,
+    Download,
     Edit3,
     FileText,
     Filter,
@@ -22,6 +23,7 @@ import {
     type LucideIcon,
     X,
 } from "lucide-react";
+import { utils, writeFile } from "xlsx";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
@@ -49,6 +51,7 @@ import {
 type ReturnFormState = ReturnFormData & { status?: ReturnStatus };
 type QuickActionVariant = "success" | "warning";
 type ReturnOrderItem = NonNullable<MarketplaceReturn["returnItems"]>[number];
+type ExportScope = "filtered" | "all";
 
 interface UnifiedReturnItem {
     key: string;
@@ -138,6 +141,12 @@ function resolvedOrInvoiceStatus(item: MarketplaceReturn): ReturnStatus {
     return item.returnType === "full" ? "resolved" : "pending_return_invoice";
 }
 
+interface ReturnDetailPayload {
+    return: MarketplaceReturn;
+    analysisItems: ReturnAnalysisItem[];
+    photos: ReturnPhoto[];
+}
+
 function returnItemSkuLabel(item: NonNullable<MarketplaceReturn["returnItems"]>[number]) {
     return item.sku || item.marketplaceSkuId || item.skuId || "-";
 }
@@ -149,6 +158,142 @@ function normalizeSku(value: string | undefined) {
 function analysisHasIssue(item?: ReturnAnalysisItem) {
     if (!item) return false;
     return item.status !== "ok" || item.problemTypes.length > 0;
+}
+
+function groupPhotosByItemId(photos: ReturnPhoto[]) {
+    const groups = new Map<string, ReturnPhoto[]>();
+    photos.forEach((photo) => {
+        if (!photo.itemId) return;
+        const current = groups.get(photo.itemId) || [];
+        current.push(photo);
+        groups.set(photo.itemId, current);
+    });
+    return groups;
+}
+
+function buildUnifiedReturnItems(
+    returnData: MarketplaceReturn | null | undefined,
+    analysisItems: ReturnAnalysisItem[],
+    photos: ReturnPhoto[]
+): UnifiedReturnItem[] {
+    const orderItems = returnData?.returnItems || [];
+    const photosByItemId = groupPhotosByItemId(photos);
+    const usedAnalysisIds = new Set<string>();
+    const analysisBySku = new Map<string, ReturnAnalysisItem[]>();
+
+    analysisItems.forEach((item) => {
+        const skuKey = normalizeSku(item.sku);
+        if (!skuKey) return;
+        const current = analysisBySku.get(skuKey) || [];
+        current.push(item);
+        analysisBySku.set(skuKey, current);
+    });
+
+    const unified: UnifiedReturnItem[] = orderItems.map((orderItem, index) => {
+        const sku = returnItemSkuLabel(orderItem);
+        const skuKey = normalizeSku(sku);
+        const matchedAnalysis = skuKey
+            ? (analysisBySku.get(skuKey) || []).find((item) => !usedAnalysisIds.has(item.id))
+            : undefined;
+
+        if (matchedAnalysis) usedAnalysisIds.add(matchedAnalysis.id);
+
+        return {
+            key: `order-${orderItem.id || orderItem.orderItemId || sku || index}`,
+            title: orderItem.title || matchedAnalysis?.productName || "Item sem descricao",
+            sku,
+            ean: matchedAnalysis?.ean,
+            orderItem,
+            analysisItem: matchedAnalysis,
+            photos: matchedAnalysis ? photosByItemId.get(matchedAnalysis.id) || [] : [],
+            source: "order",
+        };
+    });
+
+    analysisItems.forEach((item) => {
+        if (usedAnalysisIds.has(item.id)) return;
+        unified.push({
+            key: `mobile-${item.id}`,
+            title: item.productName || "Produto sem descricao",
+            sku: item.sku || "-",
+            ean: item.ean,
+            analysisItem: item,
+            photos: photosByItemId.get(item.id) || [],
+            source: "mobile",
+        });
+    });
+
+    return unified;
+}
+
+function numberOrBlank(value: number | undefined) {
+    return typeof value === "number" && Number.isFinite(value) ? value : "";
+}
+
+function formatExportDate(date: string | undefined) {
+    return date ? formatDate(date) : "";
+}
+
+function formatPhotoLinks(photos: ReturnPhoto[]) {
+    return photos.map((photo) => photo.downloadUrl).filter(Boolean).join(" | ");
+}
+
+function formatProblemTypes(problemTypes: ReturnProblemType[] | undefined) {
+    return (problemTypes || []).map((problemType) => PROBLEM_TYPE_LABELS[problemType]).join(", ");
+}
+
+function buildExportRows(detail: ReturnDetailPayload) {
+    const item = detail.return;
+    const unifiedItems = buildUnifiedReturnItems(item, detail.analysisItems, detail.photos);
+    const rows = unifiedItems.length > 0 ? unifiedItems : [{
+        key: `empty-${item.id}`,
+        title: "Sem item informado",
+        sku: "",
+        photos: [],
+        source: "order" as const,
+    }];
+
+    return rows.map((row) => {
+        const expectedQty = row.orderItem?.quantity;
+        const identifiedQty = row.analysisItem?.receivedQty;
+        const qtyDifference = typeof expectedQty === "number" && typeof identifiedQty === "number"
+            ? identifiedQty - expectedQty
+            : "";
+
+        return {
+            "Pedido": item.orderNumber,
+            "Nota fiscal": item.invoiceNumber || "",
+            "Cliente": item.customerName,
+            "Canal": RETURN_CHANNEL_LABELS[item.channel],
+            "Tipo": RETURN_TYPE_LABELS[item.returnType],
+            "Status": RETURN_STATUS_LABELS[item.status],
+            "Marketplace": item.marketplace || RETURN_CHANNEL_LABELS[item.channel],
+            "Pedido AnyMarket": item.externalOrderId || "",
+            "Devolucao AnyMarket": item.externalReturnId || "",
+            "Pedido Marketplace": item.marketplaceOrderId || "",
+            "Devolucao Marketplace": item.marketplaceReturnId || "",
+            "Rastreio reverso": item.reverseTrackingCode || item.reverseTrackingNumber || item.trackingCode || "",
+            "Data devolucao": formatExportDate(item.returnDate),
+            "Previsao chegada": formatExportDate(item.expectedArrivalDate),
+            "Origem": sourceLabel(item),
+            "Pendencia": item.pendingIssue || "",
+            "Esperado - ID item pedido": row.orderItem?.orderItemId || row.orderItem?.id || "",
+            "Esperado - SKU": row.orderItem ? row.sku : "",
+            "Esperado - Produto": row.orderItem?.title || "",
+            "Esperado - Quantidade": numberOrBlank(expectedQty),
+            "Identificado - SKU": row.analysisItem?.sku || "",
+            "Identificado - EAN": row.analysisItem?.ean || "",
+            "Identificado - Produto": row.analysisItem?.productName || "",
+            "Identificado - Quantidade": numberOrBlank(identifiedQty),
+            "Identificado - Status": row.analysisItem ? ANALYSIS_STATUS_LABELS[row.analysisItem.status] : "",
+            "Identificado - Problemas": formatProblemTypes(row.analysisItem?.problemTypes),
+            "Identificado - Observacoes": row.analysisItem?.notes || "",
+            "Identificado - Item extra": row.source === "mobile" ? "Sim" : "Nao",
+            "Diferenca quantidade": qtyDifference,
+            "Quantidade fotos": row.photos.length,
+            "Links fotos": formatPhotoLinks(row.photos),
+        };
+    });
 }
 
 function ReturnPhotoGrid({
@@ -295,6 +440,8 @@ export default function ReturnsPage() {
     const [pendingIssueText, setPendingIssueText] = useState("");
     const [isSavingIssue, setIsSavingIssue] = useState(false);
     const [isDetailMenuOpen, setIsDetailMenuOpen] = useState(false);
+    const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingReturn, setEditingReturn] = useState<MarketplaceReturn | null>(null);
@@ -422,66 +569,9 @@ export default function ReturnsPage() {
         return groups;
     }, [filteredReturns]);
 
-    const detailPhotosByItemId = useMemo(() => {
-        const groups = new Map<string, ReturnPhoto[]>();
-        detailPhotos.forEach((photo) => {
-            if (!photo.itemId) return;
-            const current = groups.get(photo.itemId) || [];
-            current.push(photo);
-            groups.set(photo.itemId, current);
-        });
-        return groups;
-    }, [detailPhotos]);
-
     const detailUnifiedItems = useMemo<UnifiedReturnItem[]>(() => {
-        const orderItems = selectedReturn?.returnItems || [];
-        const usedAnalysisIds = new Set<string>();
-        const analysisBySku = new Map<string, ReturnAnalysisItem[]>();
-
-        detailAnalysisItems.forEach((item) => {
-            const skuKey = normalizeSku(item.sku);
-            if (!skuKey) return;
-            const current = analysisBySku.get(skuKey) || [];
-            current.push(item);
-            analysisBySku.set(skuKey, current);
-        });
-
-        const unified: UnifiedReturnItem[] = orderItems.map((orderItem, index) => {
-            const sku = returnItemSkuLabel(orderItem);
-            const skuKey = normalizeSku(sku);
-            const matchedAnalysis = skuKey
-                ? (analysisBySku.get(skuKey) || []).find((item) => !usedAnalysisIds.has(item.id))
-                : undefined;
-
-            if (matchedAnalysis) usedAnalysisIds.add(matchedAnalysis.id);
-
-            return {
-                key: `order-${orderItem.id || orderItem.orderItemId || sku || index}`,
-                title: orderItem.title || matchedAnalysis?.productName || "Item sem descricao",
-                sku,
-                ean: matchedAnalysis?.ean,
-                orderItem,
-                analysisItem: matchedAnalysis,
-                photos: matchedAnalysis ? detailPhotosByItemId.get(matchedAnalysis.id) || [] : [],
-                source: "order",
-            };
-        });
-
-        detailAnalysisItems.forEach((item) => {
-            if (usedAnalysisIds.has(item.id)) return;
-            unified.push({
-                key: `mobile-${item.id}`,
-                title: item.productName || "Produto sem descricao",
-                sku: item.sku || "-",
-                ean: item.ean,
-                analysisItem: item,
-                photos: detailPhotosByItemId.get(item.id) || [],
-                source: "mobile",
-            });
-        });
-
-        return unified;
-    }, [detailAnalysisItems, detailPhotosByItemId, selectedReturn?.returnItems]);
+        return buildUnifiedReturnItems(selectedReturn, detailAnalysisItems, detailPhotos);
+    }, [detailAnalysisItems, detailPhotos, selectedReturn]);
 
     const detailProblemItems = useMemo(() => {
         return detailUnifiedItems.filter((item) => analysisHasIssue(item.analysisItem));
@@ -536,6 +626,89 @@ export default function ReturnsPage() {
             showAlert("Erro", message, "error");
         } finally {
             setIsDetailLoading(false);
+        }
+    };
+
+    const fetchReturnExportDetail = async (item: MarketplaceReturn, token: string): Promise<ReturnDetailPayload> => {
+        const response = await fetch(`/api/returns/${encodeURIComponent(item.id)}${accountQuery}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || `Erro ao buscar detalhes da devolucao ${item.orderNumber}`);
+        }
+
+        return {
+            return: data.return,
+            analysisItems: Array.isArray(data.analysisItems) ? data.analysisItems : [],
+            photos: Array.isArray(data.photos) ? data.photos : [],
+        };
+    };
+
+    const handleExportExcel = async (scope: ExportScope) => {
+        if (!user || isExporting) return;
+
+        const sourceData = scope === "filtered" ? filteredReturns : returns;
+        if (sourceData.length === 0) {
+            showAlert("Aviso", "Nenhuma devolucao para exportar.", "warning");
+            return;
+        }
+
+        setIsExportMenuOpen(false);
+        setIsExporting(true);
+        try {
+            const token = await user.getIdToken();
+            const details = await Promise.all(
+                sourceData.map((item) => fetchReturnExportDetail(item, token))
+            );
+            const exportData = details.flatMap((detail) => buildExportRows(detail));
+
+            const ws = utils.json_to_sheet(exportData);
+            ws["!cols"] = [
+                { wch: 18 },
+                { wch: 16 },
+                { wch: 28 },
+                { wch: 14 },
+                { wch: 20 },
+                { wch: 34 },
+                { wch: 18 },
+                { wch: 18 },
+                { wch: 22 },
+                { wch: 20 },
+                { wch: 24 },
+                { wch: 24 },
+                { wch: 16 },
+                { wch: 16 },
+                { wch: 18 },
+                { wch: 40 },
+                { wch: 24 },
+                { wch: 22 },
+                { wch: 48 },
+                { wch: 18 },
+                { wch: 22 },
+                { wch: 18 },
+                { wch: 48 },
+                { wch: 22 },
+                { wch: 26 },
+                { wch: 34 },
+                { wch: 40 },
+                { wch: 20 },
+                { wch: 20 },
+                { wch: 18 },
+                { wch: 70 },
+            ];
+
+            const wb = utils.book_new();
+            utils.book_append_sheet(wb, ws, "Devolucoes");
+
+            const date = new Date().toISOString().slice(0, 10);
+            const scopeName = scope === "filtered" ? "filtro" : "todas";
+            writeFile(wb, `devolucoes_${scopeName}_${date}.xlsx`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "Erro ao exportar devolucoes";
+            showAlert("Erro", message, "error");
+        } finally {
+            setIsExporting(false);
         }
     };
 
@@ -908,6 +1081,38 @@ export default function ReturnsPage() {
                         <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
                         Atualizar
                     </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsExportMenuOpen((current) => !current)}
+                            disabled={isExporting || isLoading || returns.length === 0 || (isSuper && !selectedAccountId)}
+                            className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                        >
+                            {isExporting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Download className="w-4 h-4" />
+                            )}
+                            Exportar Excel
+                        </button>
+                        {isExportMenuOpen && (
+                            <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl">
+                                <button
+                                    type="button"
+                                    onClick={() => handleExportExcel("filtered")}
+                                    className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                    Filtro atual ({filteredReturns.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleExportExcel("all")}
+                                    className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                    Todas ({returns.length})
+                                </button>
+                            </div>
+                        )}
+                    </div>
                     <button
                         onClick={openCreateForm}
                         disabled={isSuper && !selectedAccountId}
