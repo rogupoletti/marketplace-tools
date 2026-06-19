@@ -25,6 +25,8 @@ export const RETURN_PROBLEM_TYPES = [
 ] as const;
 export const RETURN_PHOTO_TYPES = ["label", "package", "problem", "wrong_product"] as const;
 export const RETURN_ANALYSIS_DISPOSITIONS = ["resolve", "dispute", "refund", "pending_return_invoice"] as const;
+export const RETURN_DISPUTE_OUTCOMES = ["accepted", "rejected"] as const;
+export const RETURN_DISPUTE_REJECTION_REASONS = ["justification_not_accepted", "deadline_expired", "other"] as const;
 
 export type ReturnChannel = (typeof RETURN_CHANNELS)[number];
 export type ReturnType = (typeof RETURN_TYPES)[number];
@@ -35,6 +37,8 @@ export type ReturnAnalysisItemStatus = (typeof RETURN_ANALYSIS_ITEM_STATUSES)[nu
 export type ReturnProblemType = (typeof RETURN_PROBLEM_TYPES)[number];
 export type ReturnPhotoType = (typeof RETURN_PHOTO_TYPES)[number];
 export type ReturnAnalysisDisposition = (typeof RETURN_ANALYSIS_DISPOSITIONS)[number];
+export type ReturnDisputeOutcome = (typeof RETURN_DISPUTE_OUTCOMES)[number];
+export type ReturnDisputeRejectionReason = (typeof RETURN_DISPUTE_REJECTION_REASONS)[number];
 export type ReturnSource = "manual" | "anymarket" | "manual_mobile_creation";
 export type ReturnHistoryOrigin = "manual" | "anymarket_webhook" | "mobile_return_analysis";
 
@@ -150,6 +154,12 @@ export interface MarketplaceReturn {
     expectedArrivalDate?: string;
     notes?: string;
     pendingIssue?: string;
+    disputeOutcome?: ReturnDisputeOutcome;
+    disputeRejectionReason?: ReturnDisputeRejectionReason;
+    disputeRejectionReasonDetail?: string;
+    disputeResolvedAt?: string;
+    disputeResolvedByUid?: string;
+    disputeResolvedByEmail?: string;
     labelInfo?: {
         rawScanPayload?: string;
         normalizedScanValue?: string;
@@ -203,6 +213,9 @@ export interface ReturnFormData {
 
 export interface ReturnUpdateData extends Partial<ReturnFormData> {
     status?: ReturnStatus;
+    disputeOutcome?: ReturnDisputeOutcome | "";
+    disputeRejectionReason?: ReturnDisputeRejectionReason | "";
+    disputeRejectionReasonDetail?: string;
 }
 
 export const RETURN_CHANNEL_LABELS: Record<ReturnChannel, string> = {
@@ -237,6 +250,17 @@ export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
     cancelled: "Cancelada",
 };
 
+export const RETURN_DISPUTE_OUTCOME_LABELS: Record<ReturnDisputeOutcome, string> = {
+    accepted: "Contestação Aceita",
+    rejected: "Contestação Rejeitada",
+};
+
+export const RETURN_DISPUTE_REJECTION_REASON_LABELS: Record<ReturnDisputeRejectionReason, string> = {
+    justification_not_accepted: "Justificativa não aceita",
+    deadline_expired: "Prazo de Contestação Expirado",
+    other: "Outro",
+};
+
 export const RETURN_HISTORY_ACTION_LABELS: Record<ReturnHistoryAction, string> = {
     created: "Devolução criada",
     updated: "Dados atualizados",
@@ -256,4 +280,12 @@ export function isReturnType(value: unknown): value is ReturnType {
 
 export function isReturnStatus(value: unknown): value is ReturnStatus {
     return typeof value === "string" && RETURN_STATUSES.includes(value as ReturnStatus);
+}
+
+export function isReturnDisputeOutcome(value: unknown): value is ReturnDisputeOutcome {
+    return typeof value === "string" && RETURN_DISPUTE_OUTCOMES.includes(value as ReturnDisputeOutcome);
+}
+
+export function isReturnDisputeRejectionReason(value: unknown): value is ReturnDisputeRejectionReason {
+    return typeof value === "string" && RETURN_DISPUTE_REJECTION_REASONS.includes(value as ReturnDisputeRejectionReason);
 }

@@ -1,6 +1,8 @@
 import "server-only";
 
 import {
+    isReturnDisputeOutcome,
+    isReturnDisputeRejectionReason,
     isReturnChannel,
     isReturnStatus,
     isReturnType,
@@ -86,6 +88,28 @@ export function parseReturnUpdatePayload(payload: unknown): ReturnUpdateData {
     if ("expectedArrivalDate" in data) update.expectedArrivalDate = cleanDate(data.expectedArrivalDate) || "";
     if ("notes" in data) update.notes = cleanString(data.notes) || "";
     if ("pendingIssue" in data) update.pendingIssue = cleanString(data.pendingIssue) || "";
+
+    if ("disputeOutcome" in data) {
+        const disputeOutcome = cleanString(data.disputeOutcome);
+        if (!disputeOutcome) {
+            update.disputeOutcome = "";
+        } else {
+            if (!isReturnDisputeOutcome(disputeOutcome)) throw new Error("Resultado da contestacao invalido");
+            update.disputeOutcome = disputeOutcome;
+        }
+    }
+
+    if ("disputeRejectionReason" in data) {
+        const disputeRejectionReason = cleanString(data.disputeRejectionReason);
+        if (!disputeRejectionReason) {
+            update.disputeRejectionReason = "";
+        } else {
+            if (!isReturnDisputeRejectionReason(disputeRejectionReason)) throw new Error("Motivo da rejeicao invalido");
+            update.disputeRejectionReason = disputeRejectionReason;
+        }
+    }
+
+    if ("disputeRejectionReasonDetail" in data) update.disputeRejectionReasonDetail = cleanString(data.disputeRejectionReasonDetail) || "";
 
     return update;
 }

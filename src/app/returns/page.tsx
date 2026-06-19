@@ -35,6 +35,8 @@ import {
     MarketplaceReturn,
     ReturnAnalysisItem,
     ReturnChannel,
+    ReturnDisputeOutcome,
+    ReturnDisputeRejectionReason,
     ReturnFormData,
     ReturnHistoryEvent,
     ReturnPhoto,
@@ -43,6 +45,10 @@ import {
     ReturnType,
     RETURN_CHANNEL_LABELS,
     RETURN_CHANNELS,
+    RETURN_DISPUTE_OUTCOME_LABELS,
+    RETURN_DISPUTE_OUTCOMES,
+    RETURN_DISPUTE_REJECTION_REASON_LABELS,
+    RETURN_DISPUTE_REJECTION_REASONS,
     RETURN_HISTORY_ACTION_LABELS,
     RETURN_SOURCE_LABELS,
     RETURN_STATUS_LABELS,
@@ -55,6 +61,13 @@ type ReturnFormState = ReturnFormData & { status?: ReturnStatus };
 type QuickActionVariant = "success" | "warning";
 type ReturnOrderItem = NonNullable<MarketplaceReturn["returnItems"]>[number];
 type ExportScope = "filtered" | "all";
+
+interface DisputeResolutionRequest {
+    item: MarketplaceReturn;
+    targetStatus: ReturnStatus;
+    historyNote?: string;
+    extraPayload: Record<string, unknown>;
+}
 
 interface UnifiedReturnItem {
     key: string;
@@ -314,6 +327,18 @@ function resolvedOrInvoiceStatus(item: MarketplaceReturn): ReturnStatus {
     return item.returnType === "full" ? "resolved" : "pending_return_invoice";
 }
 
+function isDisputeResolutionTransition(item: MarketplaceReturn, status: ReturnStatus) {
+    return item.status === "waiting_dispute_or_refund" && (status === "resolved" || status === "pending_return_invoice");
+}
+
+function disputeOutcomeLabel(item: MarketplaceReturn) {
+    return item.disputeOutcome ? RETURN_DISPUTE_OUTCOME_LABELS[item.disputeOutcome] : "";
+}
+
+function disputeRejectionReasonLabel(item: MarketplaceReturn) {
+    return item.disputeRejectionReason ? RETURN_DISPUTE_REJECTION_REASON_LABELS[item.disputeRejectionReason] : "";
+}
+
 interface ReturnDetailPayload {
     return: MarketplaceReturn;
     analysisItems: ReturnAnalysisItem[];
@@ -450,6 +475,11 @@ function buildExportRows(detail: ReturnDetailPayload) {
             "Previsao chegada": formatExportDate(item.expectedArrivalDate),
             "Origem": sourceLabel(item),
             "Pendencia": item.pendingIssue || "",
+            "Resultado contestacao": disputeOutcomeLabel(item),
+            "Motivo rejeicao contestacao": disputeRejectionReasonLabel(item),
+            "Detalhe motivo rejeicao": item.disputeRejectionReasonDetail || "",
+            "Resolucao contestacao em": item.disputeResolvedAt ? formatDateTime(item.disputeResolvedAt) : "",
+            "Resolucao contestacao por": item.disputeResolvedByEmail || "",
             "Esperado - ID item pedido": row.orderItem?.orderItemId || row.orderItem?.id || "",
             "Esperado - SKU": row.orderItem ? row.sku : "",
             "Esperado - Produto": row.orderItem?.title || "",
@@ -612,6 +642,11 @@ export default function ReturnsPage() {
     const [pendingIssueReturn, setPendingIssueReturn] = useState<MarketplaceReturn | null>(null);
     const [pendingIssueText, setPendingIssueText] = useState("");
     const [isSavingIssue, setIsSavingIssue] = useState(false);
+    const [disputeResolutionRequest, setDisputeResolutionRequest] = useState<DisputeResolutionRequest | null>(null);
+    const [disputeOutcome, setDisputeOutcome] = useState<ReturnDisputeOutcome | "">("");
+    const [disputeRejectionReason, setDisputeRejectionReason] = useState<ReturnDisputeRejectionReason | "">("");
+    const [disputeRejectionReasonDetail, setDisputeRejectionReasonDetail] = useState("");
+    const [isSavingDisputeResolution, setIsSavingDisputeResolution] = useState(false);
     const [isDetailMenuOpen, setIsDetailMenuOpen] = useState(false);
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -642,6 +677,18 @@ export default function ReturnsPage() {
     const pendingIssueCurrentText = pendingIssueReturn?.pendingIssue?.trim() || "";
     const pendingIssueNextText = pendingIssueText.trim();
     const canSubmitPendingIssue = pendingIssueNextText.length > 0 && pendingIssueNextText !== pendingIssueCurrentText;
+    const disputeRejectionDetailText = disputeRejectionReasonDetail.trim();
+    const canSubmitDisputeResolution = Boolean(
+        disputeResolutionRequest &&
+        disputeOutcome &&
+        (
+            disputeOutcome === "accepted" ||
+            (
+                disputeRejectionReason &&
+                (disputeRejectionReason !== "other" || disputeRejectionDetailText.length > 0)
+            )
+        )
+    );
 
     useEffect(() => {
         if (!loading && !user) {
@@ -855,6 +902,11 @@ export default function ReturnsPage() {
                 { wch: 18 },
                 { wch: 40 },
                 { wch: 24 },
+                { wch: 28 },
+                { wch: 34 },
+                { wch: 22 },
+                { wch: 28 },
+                { wch: 24 },
                 { wch: 22 },
                 { wch: 48 },
                 { wch: 18 },
@@ -906,6 +958,92 @@ export default function ReturnsPage() {
         return data.return as MarketplaceReturn;
     };
 
+    const closeDisputeResolutionModal = () => {
+        setDisputeResolutionRequest(null);
+        setDisputeOutcome("");
+        setDisputeRejectionReason("");
+        setDisputeRejectionReasonDetail("");
+    };
+
+    const openDisputeResolutionModal = (
+        item: MarketplaceReturn,
+        targetStatus: ReturnStatus = resolvedOrInvoiceStatus(item),
+        historyNote?: string,
+        extraPayload: Record<string, unknown> = {}
+    ) => {
+        setDisputeResolutionRequest({ item, targetStatus, historyNote, extraPayload });
+        setDisputeOutcome(item.disputeOutcome || "");
+        setDisputeRejectionReason(item.disputeRejectionReason || "");
+        setDisputeRejectionReasonDetail(item.disputeRejectionReasonDetail || "");
+    };
+
+    const handleDisputeResolutionSubmit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!disputeResolutionRequest || !disputeOutcome) return;
+
+        if (disputeOutcome === "rejected" && !disputeRejectionReason) {
+            showToast("Selecione o motivo da rejeição.", "error");
+            return;
+        }
+
+        if (disputeOutcome === "rejected" && disputeRejectionReason === "other" && !disputeRejectionDetailText) {
+            showToast("Descreva o motivo da rejeição.", "error");
+            return;
+        }
+
+        setIsSavingDisputeResolution(true);
+        try {
+            const { item, targetStatus, historyNote, extraPayload } = disputeResolutionRequest;
+            const payload = {
+                ...extraPayload,
+                disputeOutcome,
+                disputeRejectionReason: disputeOutcome === "rejected" ? disputeRejectionReason : "",
+                disputeRejectionReasonDetail: disputeOutcome === "rejected" && disputeRejectionReason === "other"
+                    ? disputeRejectionDetailText
+                    : "",
+            };
+            const defaultNoteSuffix = targetStatus === "resolved"
+                ? "Devolução finalizada."
+                : "Aguardando nota de devolução.";
+            const defaultNote = disputeOutcome === "accepted"
+                ? `Contestação aceita. ${defaultNoteSuffix}`
+                : `Contestação rejeitada. ${defaultNoteSuffix}`;
+
+            const previousReturns = returns;
+            const optimistic = {
+                ...item,
+                ...payload,
+                status: targetStatus,
+                updatedAt: new Date().toISOString(),
+            } as MarketplaceReturn;
+
+            setReturns((current) => current.map((returnItem) => returnItem.id === item.id ? optimistic : returnItem));
+            if (selectedReturn?.id === item.id) setSelectedReturn(optimistic);
+
+            try {
+                const updated = await updateReturn(item.id, {
+                    status: targetStatus,
+                    historyNote: historyNote || defaultNote,
+                    ...payload,
+                });
+                setReturns((current) => current.map((returnItem) => returnItem.id === item.id ? updated : returnItem));
+                if (selectedReturn?.id === item.id) await fetchReturnDetail(updated);
+                showToast("Contestação resolvida com sucesso.");
+            } catch (error: unknown) {
+                setReturns(previousReturns);
+                if (selectedReturn?.id === item.id) setSelectedReturn(item);
+                const message = error instanceof Error ? error.message : "Erro ao resolver contestação";
+                showAlert("Erro", message, "error");
+                return;
+            }
+
+            closeDisputeResolutionModal();
+            setIsFormOpen(false);
+        } finally {
+            setIsSavingDisputeResolution(false);
+        }
+    };
+
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
         if (!user) return;
@@ -928,6 +1066,12 @@ export default function ReturnsPage() {
                 const updatePayload: Record<string, unknown> = { ...payload };
                 if (form.status && form.status !== editingReturn.status) {
                     updatePayload.status = form.status;
+                }
+
+                if (form.status && isDisputeResolutionTransition(editingReturn, form.status)) {
+                    setIsSaving(false);
+                    openDisputeResolutionModal(editingReturn, form.status, undefined, updatePayload);
+                    return;
                 }
 
                 if (!hasFormChanges(form, editingReturn) && !updatePayload.status) {
@@ -970,6 +1114,11 @@ export default function ReturnsPage() {
         extraPayload: Record<string, unknown> = {}
     ) => {
         const hasExtraPayload = Object.keys(extraPayload).length > 0;
+        if (isDisputeResolutionTransition(item, status) && !extraPayload.disputeOutcome) {
+            openDisputeResolutionModal(item, status, historyNote, extraPayload);
+            return;
+        }
+
         if (item.status === status && !historyNote && !hasExtraPayload) return;
 
         const previousReturns = returns;
@@ -1140,7 +1289,7 @@ export default function ReturnsPage() {
             case "waiting_dispute_or_refund":
                 return [{
                     key: "dispute_resolved",
-                    label: "Marcar como Resolvida",
+                    label: "Marcar como Resolvido",
                     variant: "success",
                     icon: CheckCircle2,
                     run: (returnItem) => {
@@ -1148,7 +1297,7 @@ export default function ReturnsPage() {
                         const note = targetStatus === "resolved"
                             ? "Contestação resolvida. Devolução finalizada."
                             : "Contestação resolvida. Aguardando nota de devolução.";
-                        handleStatusChange(returnItem, targetStatus, note);
+                        openDisputeResolutionModal(returnItem, targetStatus, note);
                     },
                 }];
             case "pending_return_invoice":
@@ -1558,6 +1707,20 @@ export default function ReturnsPage() {
                                                             <span className="block max-h-9 overflow-hidden">{item.pendingIssue}</span>
                                                         </div>
                                                     )}
+                                                    {item.disputeOutcome && (
+                                                        <div className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+                                                            <span className="font-bold">Contestação: </span>
+                                                            <span>{disputeOutcomeLabel(item)}</span>
+                                                            {item.disputeOutcome === "rejected" && item.disputeRejectionReason ? (
+                                                                <span className="block max-h-9 overflow-hidden">
+                                                                    {disputeRejectionReasonLabel(item)}
+                                                                    {item.disputeRejectionReason === "other" && item.disputeRejectionReasonDetail
+                                                                        ? `: ${item.disputeRejectionReasonDetail}`
+                                                                        : ""}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    )}
                                                     {item.analysisSummary && (
                                                         <div className="flex flex-wrap gap-2 text-xs">
                                                             {item.analysisSummary.problemItems > 0 ? (
@@ -1780,6 +1943,116 @@ export default function ReturnsPage() {
                                 >
                                     {isSavingIssue && <Loader2 className="w-4 h-4 animate-spin" />}
                                     Registrar Pendência
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {disputeResolutionRequest && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[115] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900">Resolver Contestação</h2>
+                                <p className="text-sm text-gray-500 mt-1">Pedido {disputeResolutionRequest.item.orderNumber}</p>
+                            </div>
+                            <button
+                                onClick={closeDisputeResolutionModal}
+                                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleDisputeResolutionSubmit} className="p-6 space-y-5">
+                            <fieldset>
+                                <legend className="text-xs font-bold text-gray-500 mb-2">Resultado da contestação *</legend>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {RETURN_DISPUTE_OUTCOMES.map((outcome) => (
+                                        <label
+                                            key={outcome}
+                                            className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-sm font-semibold ${
+                                                disputeOutcome === outcome
+                                                    ? "border-[#2d3277] bg-blue-50 text-[#2d3277]"
+                                                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                                            }`}
+                                        >
+                                            <input
+                                                required
+                                                type="radio"
+                                                name="disputeOutcome"
+                                                value={outcome}
+                                                checked={disputeOutcome === outcome}
+                                                onChange={() => {
+                                                    setDisputeOutcome(outcome);
+                                                    if (outcome === "accepted") {
+                                                        setDisputeRejectionReason("");
+                                                        setDisputeRejectionReasonDetail("");
+                                                    }
+                                                }}
+                                                className="h-4 w-4 accent-[#2d3277]"
+                                            />
+                                            {RETURN_DISPUTE_OUTCOME_LABELS[outcome]}
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
+
+                            {disputeOutcome === "rejected" && (
+                                <div className="space-y-4">
+                                    <label className="block">
+                                        <span className="text-xs font-bold text-gray-500">Motivo da rejeição *</span>
+                                        <select
+                                            required
+                                            value={disputeRejectionReason}
+                                            onChange={(event) => {
+                                                const reason = event.target.value as ReturnDisputeRejectionReason | "";
+                                                setDisputeRejectionReason(reason);
+                                                if (reason !== "other") setDisputeRejectionReasonDetail("");
+                                            }}
+                                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-[#2d3277]/20"
+                                        >
+                                            <option value="">Selecione</option>
+                                            {RETURN_DISPUTE_REJECTION_REASONS.map((reason) => (
+                                                <option key={reason} value={reason}>
+                                                    {RETURN_DISPUTE_REJECTION_REASON_LABELS[reason]}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+
+                                    {disputeRejectionReason === "other" && (
+                                        <label className="block">
+                                            <span className="text-xs font-bold text-gray-500">Descreva o motivo *</span>
+                                            <textarea
+                                                required
+                                                value={disputeRejectionReasonDetail}
+                                                onChange={(event) => setDisputeRejectionReasonDetail(event.target.value)}
+                                                rows={4}
+                                                className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg outline-none resize-none focus:ring-2 focus:ring-[#2d3277]/20 focus:border-[#2d3277]/40"
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={closeDisputeResolutionModal}
+                                    className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 rounded-lg"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    disabled={isSavingDisputeResolution || !canSubmitDisputeResolution}
+                                    type="submit"
+                                    className="inline-flex items-center gap-2 px-5 py-2 bg-[#2d3277] text-white text-sm font-semibold rounded-lg hover:bg-[#252963] disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSavingDisputeResolution && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    Marcar como Resolvido
                                 </button>
                             </div>
                         </form>
@@ -2014,6 +2287,43 @@ export default function ReturnsPage() {
                                         </select>
                                     </div>
                                 </div>
+
+                                {selectedReturn.disputeOutcome && (
+                                    <div className="bg-white border border-violet-100 rounded-xl p-4">
+                                        <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-3">
+                                            <CheckCircle2 className="w-4 h-4 text-violet-700" />
+                                            Contestação
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Resultado</p>
+                                                <p className="font-semibold text-gray-800 mt-1">{disputeOutcomeLabel(selectedReturn)}</p>
+                                            </div>
+                                            {selectedReturn.disputeOutcome === "rejected" && (
+                                                <div>
+                                                    <p className="text-xs font-bold text-gray-400 uppercase">Motivo</p>
+                                                    <p className="font-semibold text-gray-800 mt-1">{disputeRejectionReasonLabel(selectedReturn) || "-"}</p>
+                                                </div>
+                                            )}
+                                            {selectedReturn.disputeOutcome === "rejected" && selectedReturn.disputeRejectionReasonDetail && (
+                                                <div className="sm:col-span-2">
+                                                    <p className="text-xs font-bold text-gray-400 uppercase">Detalhe</p>
+                                                    <p className="font-semibold text-gray-800 mt-1 whitespace-pre-wrap">{selectedReturn.disputeRejectionReasonDetail}</p>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Resolvida em</p>
+                                                <p className="font-semibold text-gray-800 mt-1">
+                                                    {selectedReturn.disputeResolvedAt ? formatDateTime(selectedReturn.disputeResolvedAt) : "-"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">Resolvida por</p>
+                                                <p className="font-semibold text-gray-800 mt-1">{selectedReturn.disputeResolvedByEmail || "-"}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {(selectedReturn.pendingIssue ||
                                     detailProblemItems.length > 0 ||

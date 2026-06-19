@@ -7,6 +7,8 @@ import {
     ReturnHistoryAction,
     ReturnHistoryEvent,
     ReturnPhoto,
+    RETURN_DISPUTE_OUTCOME_LABELS,
+    RETURN_DISPUTE_REJECTION_REASON_LABELS,
     RETURN_STATUS_LABELS,
 } from "@/lib/returns";
 import { getReturnsAccess } from "@/server/returns/access";
@@ -123,9 +125,34 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         const newStatus = update.status || previousStatus;
         const statusChanged = Boolean(update.status && update.status !== previousStatus);
         const now = new Date().toISOString();
+        const isDisputeResolutionStatus = newStatus === "resolved" || newStatus === "pending_return_invoice";
+        const isResolvingDispute = previousStatus === "waiting_dispute_or_refund" && statusChanged && isDisputeResolutionStatus;
+
+        if (isResolvingDispute) {
+            const disputeOutcome = update.disputeOutcome || current.disputeOutcome;
+            const disputeRejectionReason = update.disputeRejectionReason || current.disputeRejectionReason;
+            const disputeRejectionReasonDetail = update.disputeRejectionReasonDetail || current.disputeRejectionReasonDetail;
+
+            if (!disputeOutcome) {
+                return NextResponse.json({ error: "Informe o resultado da contestacao antes de resolver" }, { status: 400 });
+            }
+
+            if (disputeOutcome === "rejected") {
+                if (!disputeRejectionReason) {
+                    return NextResponse.json({ error: "Informe o motivo da contestacao rejeitada" }, { status: 400 });
+                }
+
+                if (disputeRejectionReason === "other" && !disputeRejectionReasonDetail?.trim()) {
+                    return NextResponse.json({ error: "Descreva o motivo da contestacao rejeitada" }, { status: 400 });
+                }
+            }
+        }
 
         const updateData = withoutUndefined({
             ...update,
+            disputeResolvedAt: isResolvingDispute ? now : undefined,
+            disputeResolvedByUid: isResolvingDispute ? uid : undefined,
+            disputeResolvedByEmail: isResolvingDispute ? email : undefined,
             updatedAt: now,
             updatedByUid: uid,
             updatedByEmail: email,
@@ -144,6 +171,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             } else if (newStatus === "resolved") {
                 action = "resolved";
                 note = "Devolução finalizada";
+            }
+
+            if (isResolvingDispute) {
+                const outcome = update.disputeOutcome || current.disputeOutcome;
+                const rejectionReason = update.disputeRejectionReason || current.disputeRejectionReason;
+                const outcomeLabel = outcome ? RETURN_DISPUTE_OUTCOME_LABELS[outcome] : "Contestação resolvida";
+                const reasonLabel = rejectionReason ? RETURN_DISPUTE_REJECTION_REASON_LABELS[rejectionReason] : "";
+                note = reasonLabel ? `${outcomeLabel}. Motivo: ${reasonLabel}.` : outcomeLabel;
             }
         } else if (Object.keys(update).length === 1 && "notes" in update) {
             note = "Observação atualizada";
