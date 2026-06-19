@@ -122,6 +122,65 @@ function formatDate(date: string | undefined) {
     return `${day}/${month}/${year}`;
 }
 
+function dateOnly(value: string | undefined) {
+    if (!value) return undefined;
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (match) return match;
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 10);
+}
+
+function addDays(date: string | undefined, days: number) {
+    const normalized = dateOnly(date);
+    if (!normalized) return undefined;
+
+    const [year, month, day] = normalized.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    parsed.setUTCDate(parsed.getUTCDate() + days);
+    return parsed.toISOString().slice(0, 10);
+}
+
+function shouldShowDisputeDeadline(status: ReturnStatus) {
+    return status === "pending_analysis" || status === "pending_dispute_or_refund";
+}
+
+function getDisputeDeadlineDate(item: MarketplaceReturn) {
+    const aliases = item as MarketplaceReturn & {
+        arrivedAt?: string;
+        claimDeadline?: string;
+        claimDeadlineDate?: string;
+        contestationDeadline?: string;
+        contestationDeadlineDate?: string;
+        deliveredAt?: string;
+        deliveryDate?: string;
+        disputeDeadline?: string;
+        maxDisputeDeadline?: string;
+        maxDisputeDeadlineDate?: string;
+        receivedAt?: string;
+        refundDeadline?: string;
+        refundDeadlineDate?: string;
+    };
+    const explicitDeadline = aliases.disputeDeadlineDate ||
+        aliases.disputeDeadline ||
+        aliases.claimDeadlineDate ||
+        aliases.claimDeadline ||
+        aliases.contestationDeadlineDate ||
+        aliases.contestationDeadline ||
+        aliases.refundDeadlineDate ||
+        aliases.refundDeadline ||
+        aliases.maxDisputeDeadlineDate ||
+        aliases.maxDisputeDeadline;
+    const arrivalDate = aliases.arrivalDate ||
+        aliases.arrivedAt ||
+        aliases.receivedAt ||
+        aliases.deliveredAt ||
+        aliases.deliveryDate ||
+        aliases.expectedArrivalDate;
+
+    return dateOnly(explicitDeadline) || addDays(arrivalDate || aliases.createdAt, 7);
+}
+
 function formatDateTime(value: string) {
     return new Date(value).toLocaleString("pt-BR", {
         day: "2-digit",
@@ -1442,6 +1501,17 @@ export default function ReturnsPage() {
                                                                 : formatDate(item.returnDate)}
                                                         </span>
                                                     </div>
+                                                    {shouldShowDisputeDeadline(item.status) && (
+                                                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                                                            <div className="flex items-center gap-2 font-bold">
+                                                                <AlertTriangle className="w-3.5 h-3.5" />
+                                                                prazo máximo
+                                                            </div>
+                                                            <div className="mt-1 text-base font-black leading-none">
+                                                                {formatDate(getDisputeDeadlineDate(item))}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     {item.pendingIssue && (
                                                         <div className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-xs text-orange-800">
                                                             <span className="font-bold">Pendência: </span>

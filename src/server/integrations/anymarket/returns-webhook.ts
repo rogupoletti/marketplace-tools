@@ -38,6 +38,8 @@ export interface NormalizedAnyMarketReturnEvent {
     reverseMarketplaceShippingId?: string;
     reverseShippingStatus?: string;
     reverseShippingSubStatus?: string;
+    arrivalDate?: string;
+    disputeDeadlineDate?: string;
     returnItems?: MarketplaceReturnItem[];
     orderFull?: boolean;
     eventTimestamp?: string;
@@ -183,6 +185,98 @@ function firstTimestamp(payload: unknown, paths: string[]): string | undefined {
     return undefined;
 }
 
+function cleanDateOnly(value: unknown): string | undefined {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+    }
+
+    const text = cleanString(value);
+    if (!text) return undefined;
+
+    const dateOnly = text.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (dateOnly) {
+        const date = new Date(`${dateOnly}T00:00:00.000Z`);
+        return Number.isNaN(date.getTime()) ? undefined : dateOnly;
+    }
+
+    const date = new Date(text);
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+}
+
+function firstDateOnly(payload: unknown, paths: string[]): string | undefined {
+    for (const path of paths) {
+        const value = cleanDateOnly(getByPath(payload, path));
+        if (value) return value;
+    }
+    return undefined;
+}
+
+const ARRIVAL_DATE_PATHS = [
+    "arrivalDate",
+    "arrivedAt",
+    "receivedAt",
+    "deliveredAt",
+    "deliveryDate",
+    "return.arrivalDate",
+    "return.arrivedAt",
+    "return.receivedAt",
+    "return.deliveredAt",
+    "return.deliveryDate",
+    "devolution.arrivalDate",
+    "devolution.receivedAt",
+    "devolution.deliveredAt",
+    "content.arrivalDate",
+    "content.arrivedAt",
+    "content.receivedAt",
+    "content.deliveredAt",
+    "content.return.arrivalDate",
+    "content.return.receivedAt",
+    "content.return.deliveredAt",
+    "content.devolution.arrivalDate",
+    "content.devolution.receivedAt",
+    "content.devolution.deliveredAt",
+];
+
+const DISPUTE_DEADLINE_DATE_PATHS = [
+    "disputeDeadlineDate",
+    "disputeDeadline",
+    "claimDeadlineDate",
+    "claimDeadline",
+    "contestationDeadlineDate",
+    "contestationDeadline",
+    "refundDeadlineDate",
+    "refundDeadline",
+    "maxDisputeDeadlineDate",
+    "maxDisputeDeadline",
+    "maximumDisputeDate",
+    "deadlineContest",
+    "return.disputeDeadlineDate",
+    "return.disputeDeadline",
+    "return.claimDeadline",
+    "return.contestationDeadline",
+    "return.refundDeadline",
+    "devolution.disputeDeadlineDate",
+    "devolution.disputeDeadline",
+    "devolution.claimDeadline",
+    "devolution.contestationDeadline",
+    "devolution.refundDeadline",
+    "content.disputeDeadlineDate",
+    "content.disputeDeadline",
+    "content.claimDeadline",
+    "content.contestationDeadline",
+    "content.refundDeadline",
+    "content.return.disputeDeadlineDate",
+    "content.return.disputeDeadline",
+    "content.return.claimDeadline",
+    "content.return.contestationDeadline",
+    "content.return.refundDeadline",
+    "content.devolution.disputeDeadline",
+    "content.devolution.claimDeadline",
+    "content.devolution.contestationDeadline",
+    "content.devolution.refundDeadline",
+];
+
 function mergeEventDetails(
     event: NormalizedAnyMarketReturnEvent,
     details: Partial<NormalizedAnyMarketReturnEvent>
@@ -205,6 +299,8 @@ function mergeEventDetails(
         reverseMarketplaceShippingId: event.reverseMarketplaceShippingId || details.reverseMarketplaceShippingId,
         reverseShippingStatus: event.reverseShippingStatus || details.reverseShippingStatus,
         reverseShippingSubStatus: event.reverseShippingSubStatus || details.reverseShippingSubStatus,
+        arrivalDate: event.arrivalDate || details.arrivalDate,
+        disputeDeadlineDate: event.disputeDeadlineDate || details.disputeDeadlineDate,
         returnItems: event.returnItems || details.returnItems,
         orderFull: event.orderFull ?? details.orderFull,
         eventTimestamp: event.eventTimestamp || details.eventTimestamp,
@@ -432,6 +528,8 @@ function normalizeAnyMarketReturnDetails(returnPayload: unknown): Partial<Normal
             "content.updatedAt",
             "content.createdAt",
         ]),
+        arrivalDate: firstDateOnly(returnPayload, ARRIVAL_DATE_PATHS),
+        disputeDeadlineDate: firstDateOnly(returnPayload, DISPUTE_DEADLINE_DATE_PATHS),
         returnItems: normalizeAnyMarketReturnItems(returnPayload),
     };
 }
@@ -549,6 +647,13 @@ function normalizeAnyMarketShippingDetails(
         reverseMarketplaceShippingId,
         reverseShippingStatus: firstString(shipping, ["status"]),
         reverseShippingSubStatus: firstString(shipping, ["subStatus"]),
+        arrivalDate: firstDateOnly(shipping, [
+            "deliveredAt",
+            "deliveryDate",
+            "receivedAt",
+            "arrivalDate",
+            "estimatedDelivery",
+        ]),
         eventTimestamp: firstTimestamp(shipping, [
             "updatedAt",
             "createdAt",
@@ -839,6 +944,8 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
         "content.tracking.date",
         "content.tracking.updatedAt",
     ]);
+    const arrivalDate = firstDateOnly(payload, ARRIVAL_DATE_PATHS);
+    const disputeDeadlineDate = firstDateOnly(payload, DISPUTE_DEADLINE_DATE_PATHS);
     const eventHints = [
         eventType,
         firstString(payload, ["entity", "module", "content.type", "content.resource"]),
@@ -887,6 +994,8 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
         anymarketStatus,
         trackingCode,
         trackingUrl,
+        arrivalDate,
+        disputeDeadlineDate,
         eventTimestamp,
         rawPayload: payload,
         isReturnEvent,
@@ -1044,6 +1153,8 @@ function getExternalReturnUpdate(event: NormalizedAnyMarketReturnEvent, now: str
         reverseMarketplaceShippingId: event.reverseMarketplaceShippingId,
         reverseShippingStatus: event.reverseShippingStatus,
         reverseShippingSubStatus: event.reverseShippingSubStatus,
+        arrivalDate: event.arrivalDate,
+        disputeDeadlineDate: event.disputeDeadlineDate,
         returnItems: event.returnItems && event.returnItems.length > 0 ? event.returnItems : undefined,
         lastWebhookReceivedAt: now,
         lastExternalStatusAt: event.eventTimestamp || now,
@@ -1235,6 +1346,8 @@ async function processAnyMarketReturnEvent(
                 reverseMarketplaceShippingId: event.reverseMarketplaceShippingId,
                 reverseShippingStatus: event.reverseShippingStatus,
                 reverseShippingSubStatus: event.reverseShippingSubStatus,
+                arrivalDate: event.arrivalDate,
+                disputeDeadlineDate: event.disputeDeadlineDate,
                 returnItems: event.returnItems && event.returnItems.length > 0 ? event.returnItems : undefined,
                 lastWebhookReceivedAt: now,
                 lastExternalStatusAt: event.eventTimestamp || now,

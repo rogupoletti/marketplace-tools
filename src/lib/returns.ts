@@ -141,6 +141,8 @@ export interface MarketplaceReturn {
     reverseMarketplaceShippingId?: string;
     reverseShippingStatus?: string;
     reverseShippingSubStatus?: string;
+    arrivalDate?: string;
+    disputeDeadlineDate?: string;
     returnItems?: MarketplaceReturnItem[];
     lastWebhookReceivedAt?: string;
     lastExternalStatusAt?: string;
