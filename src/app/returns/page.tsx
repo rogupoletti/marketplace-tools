@@ -11,6 +11,7 @@ import {
     ClipboardList,
     Download,
     Edit3,
+    ExternalLink,
     FileText,
     Filter,
     Loader2,
@@ -64,13 +65,24 @@ interface UnifiedReturnItem {
     source: "order" | "mobile";
 }
 
-interface QuickAction {
+interface QuickActionBase {
     key: string;
     label: string;
     variant: QuickActionVariant;
     icon: LucideIcon;
+}
+
+interface QuickButtonAction extends QuickActionBase {
+    type?: "button";
     run: (item: MarketplaceReturn) => void;
 }
+
+interface QuickLinkAction extends QuickActionBase {
+    type: "link";
+    href: string;
+}
+
+type QuickAction = QuickButtonAction | QuickLinkAction;
 
 const EMPTY_FORM: ReturnFormState = {
     orderNumber: "",
@@ -122,6 +134,52 @@ function formatDateTime(value: string) {
 
 function sourceLabel(item: MarketplaceReturn) {
     return RETURN_SOURCE_LABELS[item.source || "manual"];
+}
+
+function cleanPortalId(value: string | undefined) {
+    const trimmed = value?.trim();
+    return trimmed || undefined;
+}
+
+function normalizedMarketplaceText(item: MarketplaceReturn) {
+    return [item.marketplace, RETURN_CHANNEL_LABELS[item.channel], item.channel]
+        .filter(Boolean)
+        .join(" ")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+}
+
+function isMercadoLivreReturn(item: MarketplaceReturn) {
+    if (item.channel === "meli") return true;
+    const normalized = normalizedMarketplaceText(item);
+    return normalized.includes("mercado livre") || normalized.includes("mercadolivre") || normalized.includes("meli");
+}
+
+function isShopeeReturn(item: MarketplaceReturn) {
+    if (item.channel === "shopee") return true;
+    return normalizedMarketplaceText(item).includes("shopee");
+}
+
+const SHOPEE_DISPUTE_PORTAL_URL = "https://seller.shopee.com.br/portal/sale/returnrefundcancel";
+
+function getDisputePortalUrl(item: MarketplaceReturn) {
+    const meliSaleId = cleanPortalId(item.orderNumber);
+    const marketplaceReturnId = cleanPortalId(item.marketplaceReturnId);
+
+    if (isMercadoLivreReturn(item) && meliSaleId && marketplaceReturnId) {
+        return `https://www.mercadolivre.com.br/vendas/novo/mensagens/${encodeURIComponent(meliSaleId)}/mediacao/${encodeURIComponent(marketplaceReturnId)}`;
+    }
+
+    if (isShopeeReturn(item)) {
+        return SHOPEE_DISPUTE_PORTAL_URL;
+    }
+
+    return null;
+}
+
+function marketplaceOrderDetailLabel(item: MarketplaceReturn) {
+    return isMercadoLivreReturn(item) ? "Pedido marketplace (devolução)" : "Pedido marketplace";
 }
 
 function statusColor(status: ReturnStatus) {
@@ -944,13 +1002,26 @@ export default function ReturnsPage() {
                     },
                 ];
             case "pending_dispute_or_refund":
-                return [{
-                    key: "disputed",
-                    label: "Marcar como Contestada",
-                    variant: "success",
-                    icon: CheckCircle2,
-                    run: (returnItem) => handleStatusChange(returnItem, "waiting_dispute_or_refund", "Contestação registrada. Aguardando retorno."),
-                }];
+                {
+                    const portalUrl = getDisputePortalUrl(item);
+                    return [
+                        ...(portalUrl ? [{
+                            key: "open_dispute_portal",
+                            label: "Acessar portal",
+                            variant: "warning" as const,
+                            icon: ExternalLink,
+                            type: "link" as const,
+                            href: portalUrl,
+                        }] : []),
+                        {
+                            key: "disputed",
+                            label: "Marcar como Contestada",
+                            variant: "success",
+                            icon: CheckCircle2,
+                            run: (returnItem) => handleStatusChange(returnItem, "waiting_dispute_or_refund", "Contestação registrada. Aguardando retorno."),
+                        },
+                    ];
+                }
             case "waiting_dispute_or_refund":
                 return [{
                     key: "dispute_resolved",
@@ -989,6 +1060,22 @@ export default function ReturnsPage() {
                     const className = action.variant === "success"
                         ? "bg-emerald-600 text-white hover:bg-emerald-700"
                         : "bg-orange-500 text-white hover:bg-orange-600";
+
+                    if (action.type === "link") {
+                        return (
+                            <a
+                                key={action.key}
+                                href={action.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                                className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold shadow-sm ${className}`}
+                            >
+                                <Icon className="w-4 h-4" />
+                                {action.label}
+                            </a>
+                        );
+                    }
 
                     return (
                         <button
@@ -1704,7 +1791,7 @@ export default function ReturnsPage() {
                                                 <p className="font-semibold text-gray-800 mt-1">{selectedReturn.anymarketStatus || "-"}</p>
                                             </div>
                                             <div>
-                                                <p className="text-xs font-bold text-gray-400 uppercase">Pedido marketplace</p>
+                                                <p className="text-xs font-bold text-gray-400 uppercase">{marketplaceOrderDetailLabel(selectedReturn)}</p>
                                                 <p className="font-semibold text-gray-800 mt-1">
                                                     {selectedReturn.marketplaceOrderId || "-"}
                                                 </p>

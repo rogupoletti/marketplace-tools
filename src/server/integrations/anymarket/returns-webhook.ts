@@ -211,6 +211,17 @@ function mergeEventDetails(
     };
 }
 
+function mergeOrderDetails(
+    event: NormalizedAnyMarketReturnEvent,
+    details: Partial<NormalizedAnyMarketReturnEvent>
+): NormalizedAnyMarketReturnEvent {
+    const merged = mergeEventDetails(event, details);
+    return {
+        ...merged,
+        orderNumber: details.orderNumber || merged.orderNumber,
+    };
+}
+
 function normalizeAnyMarketOrderDetails(order: unknown): Partial<NormalizedAnyMarketReturnEvent> {
     return {
         externalOrderId: firstString(order, [
@@ -221,17 +232,6 @@ function normalizeAnyMarketOrderDetails(order: unknown): Partial<NormalizedAnyMa
             "order.id",
             "content.id",
             "content.order.id",
-        ]),
-        marketplaceOrderId: firstString(order, [
-            "marketPlaceNumber",
-            "marketplaceNumber",
-            "marketplaceOrderId",
-            "marketPlaceOrderId",
-            "marketplace.id",
-            "order.marketPlaceNumber",
-            "order.marketplaceOrderId",
-            "content.marketPlaceNumber",
-            "content.marketplaceOrderId",
         ]),
         orderNumber: firstString(order, [
             "marketPlaceNumber",
@@ -347,12 +347,12 @@ function normalizeAnyMarketReturnDetails(returnPayload: unknown): Partial<Normal
     const marketplaceOrderId = firstString(returnPayload, [
         "marketplaceOrderId",
         "marketPlaceOrderId",
-        "marketPlaceNumber",
-        "marketplaceNumber",
-        "order.marketPlaceNumber",
-        "order.marketplaceOrderId",
+        "return.marketplaceOrderId",
+        "return.marketPlaceOrderId",
         "content.marketplaceOrderId",
-        "content.marketPlaceNumber",
+        "content.marketPlaceOrderId",
+        "content.return.marketplaceOrderId",
+        "content.return.marketPlaceOrderId",
     ]);
 
     return {
@@ -670,23 +670,30 @@ export function normalizeAnyMarketReturnWebhookPayload(payload: unknown): Normal
     const marketplaceOrderId = firstString(payload, [
         "marketplaceOrderId",
         "marketPlaceOrderId",
-        "marketPlaceNumber",
         "return.marketplaceOrderId",
-        "order.marketPlaceNumber",
+        "return.marketPlaceOrderId",
         "order.marketplaceOrderId",
         "content.marketplaceOrderId",
-        "content.marketPlaceNumber",
+        "content.marketPlaceOrderId",
         "content.return.marketplaceOrderId",
-        "content.order.marketPlaceNumber",
+        "content.return.marketPlaceOrderId",
         "content.order.marketplaceOrderId",
     ]);
     const orderNumber = firstString(payload, [
         "orderNumber",
         "number",
+        "marketPlaceNumber",
+        "marketplaceNumber",
         "order.number",
         "order.orderNumber",
+        "order.marketPlaceNumber",
+        "order.marketplaceNumber",
         "content.orderNumber",
         "content.order.number",
+        "content.marketPlaceNumber",
+        "content.marketplaceNumber",
+        "content.order.marketPlaceNumber",
+        "content.order.marketplaceNumber",
     ]);
     const invoiceNumber = firstString(payload, [
         "invoiceNumber",
@@ -946,7 +953,7 @@ async function enrichReturnEventsFromOrder(
             if (!order || typeof order !== "object") continue;
 
             const details = normalizeAnyMarketOrderDetails(order);
-            return enrichedEvents.map((eventItem) => mergeEventDetails(eventItem, details));
+            return enrichedEvents.map((eventItem) => mergeOrderDetails(eventItem, details));
         } catch (error) {
             console.warn(`[Anymarket Returns Webhook] Nao foi possivel buscar detalhes do pedido ${candidateId}.`, error);
         }
@@ -1278,13 +1285,19 @@ async function processAnyMarketReturnEvent(
         const updateData = getExternalReturnUpdate(event, now);
         const inferredReturnType = inferReturnType(current.channel, event.marketplace, event.orderFull);
         const shouldUpdateReturnType = current.returnType === "other" && inferredReturnType !== "other";
+        const currentOrderLooksLikeFallback = Boolean(
+            !current.orderNumber ||
+            current.orderNumber === current.externalReturnId ||
+            current.orderNumber === event.externalReturnId ||
+            current.orderNumber === current.externalOrderId ||
+            current.orderNumber === event.externalOrderId ||
+            current.orderNumber === current.marketplaceOrderId ||
+            current.orderNumber === event.marketplaceOrderId
+        );
         const shouldUpdateOrderNumber = Boolean(
             event.orderNumber &&
-            (
-                !current.orderNumber ||
-                current.orderNumber === current.externalReturnId ||
-                current.orderNumber === event.externalReturnId
-            )
+            event.orderNumber !== current.orderNumber &&
+            currentOrderLooksLikeFallback
         );
         let nextStatus: ReturnStatus | undefined;
         let action: ReturnHistoryAction = "webhook_received";
