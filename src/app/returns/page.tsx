@@ -14,12 +14,14 @@ import {
     ExternalLink,
     FileText,
     Filter,
+    Hand,
     Loader2,
     MoreVertical,
     PackageOpen,
     Plus,
     RefreshCw,
     Search,
+    Smartphone,
     Trash2,
     type LucideIcon,
     X,
@@ -193,6 +195,60 @@ function formatDateTime(value: string) {
 
 function sourceLabel(item: MarketplaceReturn) {
     return RETURN_SOURCE_LABELS[item.source || "manual"];
+}
+
+function marketplaceCardLabel(item: MarketplaceReturn) {
+    return item.marketplace || RETURN_CHANNEL_LABELS[item.channel];
+}
+
+function returnTypeCardLabel(item: MarketplaceReturn) {
+    return item.returnType.startsWith("full") ? "Full" : RETURN_TYPE_LABELS[item.returnType];
+}
+
+function pluralize(count: number, singular: string, plural: string) {
+    return count === 1 ? singular : plural;
+}
+
+function ReturnSourceIndicator({ item }: { item: MarketplaceReturn }) {
+    if (item.source === "anymarket") {
+        return (
+            <span
+                className="relative inline-flex h-5 w-5 overflow-hidden rounded-[3px] border border-orange-200 bg-orange-500"
+                title="AnyMarket"
+                aria-label="AnyMarket"
+            >
+                <Image
+                    src="/images/logo-any.png"
+                    alt="AnyMarket"
+                    fill
+                    sizes="20px"
+                    className="object-cover"
+                />
+            </span>
+        );
+    }
+
+    if (item.source === "manual_mobile_creation" || item.createdFromMobile) {
+        return (
+            <span
+                className="inline-flex h-5 w-5 items-center justify-center rounded-[3px] border border-blue-100 bg-blue-50 text-[#2d3277]"
+                title="Criado via mobile"
+                aria-label="Criado via mobile"
+            >
+                <Smartphone className="h-3.5 w-3.5" />
+            </span>
+        );
+    }
+
+    return (
+        <span
+            className="inline-flex h-5 w-5 items-center justify-center rounded-[3px] border border-gray-200 bg-gray-50 text-gray-600"
+            title="Pedido manual"
+            aria-label="Pedido manual"
+        >
+            <Hand className="h-3.5 w-3.5" />
+        </span>
+    );
 }
 
 function cleanPortalId(value: string | undefined) {
@@ -1455,44 +1511,29 @@ export default function ReturnsPage() {
                                                     draggedId === item.id ? "opacity-60" : ""
                                                 }`}
                                             >
-                                                <div className="flex items-start justify-between gap-3 mb-3">
-                                                    <div className="min-w-0">
+                                                <div className="mb-3 flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase">Pedido</p>
-                                                        <h3 className="font-bold text-gray-900 truncate">{item.orderNumber}</h3>
+                                                        <h3 className="whitespace-nowrap text-[12px] font-bold leading-tight text-gray-900">{item.orderNumber}</h3>
                                                     </div>
-                                                    <div className="flex flex-col items-end gap-1">
+                                                    <div className="flex flex-shrink-0 flex-col items-end gap-1">
                                                         <span
-                                                            className="max-w-[120px] truncate text-[11px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-md"
-                                                            title={item.marketplace || RETURN_CHANNEL_LABELS[item.channel]}
+                                                            className="max-w-[116px] truncate text-[9px] font-black uppercase text-gray-400"
+                                                            title={marketplaceCardLabel(item)}
                                                         >
-                                                            {item.marketplace || RETURN_CHANNEL_LABELS[item.channel]}
+                                                            {marketplaceCardLabel(item)}
                                                         </span>
-                                                        <span className={item.source === "anymarket"
-                                                            ? "text-[11px] font-bold bg-blue-50 text-[#2d3277] px-2 py-1 rounded-md"
-                                                            : "text-[11px] font-bold bg-gray-50 text-gray-500 px-2 py-1 rounded-md"
-                                                        }>
-                                                            {sourceLabel(item)}
-                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="rounded-[3px] bg-gray-50 px-1.5 py-1 text-[10px] font-bold leading-none text-[#2d3277] ring-1 ring-gray-100">
+                                                                {returnTypeCardLabel(item)}
+                                                            </span>
+                                                            <ReturnSourceIndicator item={item} />
+                                                        </div>
                                                     </div>
                                                 </div>
 
                                                 <div className="space-y-2 text-sm">
                                                     <p className="text-gray-700 truncate">{item.customerName}</p>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        <span className="text-xs text-gray-600 bg-gray-50 border border-gray-100 px-2 py-1 rounded-md">
-                                                            {RETURN_TYPE_LABELS[item.returnType]}
-                                                        </span>
-                                                        {item.anymarketStatus && (
-                                                            <span className="text-xs text-[#2d3277] bg-blue-50 border border-blue-100 px-2 py-1 rounded-md">
-                                                                AnyMarket: {item.anymarketStatus}
-                                                            </span>
-                                                        )}
-                                                        {item.invoiceNumber && (
-                                                            <span className="text-xs text-gray-600 bg-gray-50 border border-gray-100 px-2 py-1 rounded-md">
-                                                                NF {item.invoiceNumber}
-                                                            </span>
-                                                        )}
-                                                    </div>
                                                     <div className="flex items-center gap-2 text-xs text-gray-500">
                                                         <CalendarDays className="w-3.5 h-3.5" />
                                                         <span>
@@ -1502,12 +1543,11 @@ export default function ReturnsPage() {
                                                         </span>
                                                     </div>
                                                     {shouldShowDisputeDeadline(item.status) && (
-                                                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                                                            <div className="flex items-center gap-2 font-bold">
-                                                                <AlertTriangle className="w-3.5 h-3.5" />
-                                                                prazo máximo
+                                                        <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-3 text-center text-xs text-red-700">
+                                                            <div className="text-[10px] font-bold uppercase">
+                                                                Prazo máximo
                                                             </div>
-                                                            <div className="mt-1 text-base font-black leading-none">
+                                                            <div className="mt-1 text-base font-black leading-none text-red-700">
                                                                 {formatDate(getDisputeDeadlineDate(item))}
                                                             </div>
                                                         </div>
@@ -1522,17 +1562,17 @@ export default function ReturnsPage() {
                                                         <div className="flex flex-wrap gap-2 text-xs">
                                                             {item.analysisSummary.problemItems > 0 ? (
                                                                 <span className="rounded-md border border-orange-100 bg-orange-50 px-2 py-1 font-bold text-orange-700">
-                                                                    {item.analysisSummary.problemItems} problema(s)
+                                                                    {item.analysisSummary.problemItems} {pluralize(item.analysisSummary.problemItems, "problema", "problemas")}
                                                                 </span>
                                                             ) : null}
                                                             {item.analysisSummary.manuallyAddedItems > 0 ? (
                                                                 <span className="rounded-md border border-blue-100 bg-blue-50 px-2 py-1 font-bold text-[#2d3277]">
-                                                                    {item.analysisSummary.manuallyAddedItems} item(ns) adicionados
+                                                                    {item.analysisSummary.manuallyAddedItems} {pluralize(item.analysisSummary.manuallyAddedItems, "item adicionado", "itens adicionados")}
                                                                 </span>
                                                             ) : null}
                                                             {item.analysisSummary.photoCount > 0 ? (
                                                                 <span className="rounded-md border border-gray-100 bg-gray-50 px-2 py-1 font-bold text-gray-600">
-                                                                    {item.analysisSummary.photoCount} foto(s)
+                                                                    {item.analysisSummary.photoCount} {pluralize(item.analysisSummary.photoCount, "foto", "fotos")}
                                                                 </span>
                                                             ) : null}
                                                         </div>
