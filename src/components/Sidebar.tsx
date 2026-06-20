@@ -7,8 +7,11 @@ import { usePathname } from "next/navigation";
 import {
     BarChart3,
     Calculator,
+    Check,
     ChevronDown,
     ChevronRight,
+    ClipboardList,
+    Copy,
     LayoutDashboard,
     PackageSearch,
     PanelLeftClose,
@@ -29,6 +32,7 @@ interface SidebarProps {
 interface SubItem {
     name: string;
     href: string;
+    copyable?: boolean;
 }
 
 type NavItem =
@@ -52,18 +56,45 @@ interface NavSection {
     items: NavItem[];
 }
 
+type DropdownKey = "reposFull" | "returns" | "calculadoras" | "integracoes";
+
 export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsHovered }: SidebarProps) {
     const pathname = usePathname();
     const { userData } = useAuth();
-    const [isCalculadorasOpen, setIsCalculadorasOpen] = useState(false);
-    const [isIntegracoesOpen, setIsIntegracoesOpen] = useState(false);
-    const [isReposFullOpen, setIsReposFullOpen] = useState(false);
+    const [openDropdownKey, setOpenDropdownKey] = useState<DropdownKey | null>(null);
+    const [copiedHref, setCopiedHref] = useState<string | null>(null);
 
     const actualCollapsed = isCollapsed && !isHovered;
     const isAdmin = userData?.isAdmin || userData?.role === "superadmin" || userData?.role === "account_admin";
-    const actualCalculadorasOpen = isCalculadorasOpen || pathname.includes("/shopee") || pathname.includes("/meli") || pathname.includes("/amazon");
-    const actualIntegracoesOpen = isIntegracoesOpen || pathname.includes("/integrations");
-    const actualReposFullOpen = isReposFullOpen || pathname.includes("/full-replenishment");
+    const activeDropdownKey: DropdownKey | null = pathname.startsWith("/full-replenishment")
+        ? "reposFull"
+        : pathname.startsWith("/returns")
+            ? "returns"
+            : ["/shopee", "/meli", "/amazon"].includes(pathname)
+                ? "calculadoras"
+                : pathname.startsWith("/integrations")
+                    ? "integracoes"
+                    : null;
+
+    function isDropdownOpen(key: DropdownKey) {
+        return activeDropdownKey === key || openDropdownKey === key;
+    }
+
+    function toggleDropdown(key: DropdownKey) {
+        if (key === activeDropdownKey) return;
+        setOpenDropdownKey((current) => current === key ? null : key);
+    }
+
+    async function copyLink(href: string) {
+        try {
+            const url = new URL(href, window.location.origin).toString();
+            await navigator.clipboard.writeText(url);
+            setCopiedHref(href);
+            window.setTimeout(() => setCopiedHref((current) => current === href ? null : current), 1800);
+        } catch (error) {
+            console.error("Nao foi possivel copiar o link:", error);
+        }
+    }
 
     const navItems: NavSection[] = [
         {
@@ -73,11 +104,22 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                     name: "Reposição Full",
                     icon: PackageSearch,
                     isDropdown: true,
-                    isOpen: actualReposFullOpen,
-                    toggle: () => setIsReposFullOpen(!isReposFullOpen),
+                    isOpen: isDropdownOpen("reposFull"),
+                    toggle: () => toggleDropdown("reposFull"),
                     subItems: [
                         { name: "Mercado Livre", href: "/full-replenishment/meli" },
                         { name: "Shopee", href: "/full-replenishment/shopee" },
+                    ],
+                },
+                {
+                    name: "Devoluções",
+                    icon: ClipboardList,
+                    isDropdown: true,
+                    isOpen: isDropdownOpen("returns"),
+                    toggle: () => toggleDropdown("returns"),
+                    subItems: [
+                        { name: "Painel", href: "/returns" },
+                        { name: "Mobile", href: "/returns/mobile", copyable: true },
                     ],
                 },
                 { name: "Cadastros", href: "/catalog", icon: LayoutDashboard },
@@ -91,8 +133,8 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                     name: "Calculadoras",
                     icon: Calculator,
                     isDropdown: true,
-                    isOpen: actualCalculadorasOpen,
-                    toggle: () => setIsCalculadorasOpen(!isCalculadorasOpen),
+                    isOpen: isDropdownOpen("calculadoras"),
+                    toggle: () => toggleDropdown("calculadoras"),
                     subItems: [
                         { name: "Shopee", href: "/shopee" },
                         { name: "Mercado Livre", href: "/meli" },
@@ -109,8 +151,8 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                     name: "Integrações",
                     icon: Zap,
                     isDropdown: true,
-                    isOpen: actualIntegracoesOpen,
-                    toggle: () => setIsIntegracoesOpen(!isIntegracoesOpen),
+                    isOpen: isDropdownOpen("integracoes"),
+                    toggle: () => toggleDropdown("integracoes"),
                     subItems: [
                         { name: "Anymarket", href: "/integrations/anymarket" },
                         { name: "Mercado Livre", href: "/integrations/mercadolivre" },
@@ -174,14 +216,27 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
 
                                             <div className={`overflow-hidden transition-all duration-300 ${(!actualCollapsed && item.isOpen) ? "max-h-40 opacity-100 mt-1" : "max-h-0 opacity-0"}`}>
                                                 {item.subItems.map((sub) => (
-                                                    <Link
-                                                        key={sub.name}
-                                                        href={sub.href}
-                                                        className={`flex items-center gap-3 pl-11 pr-3 py-2 text-sm rounded-lg transition-colors whitespace-nowrap
-                                                            ${pathname === sub.href ? "text-blue-600 font-semibold" : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"}`}
-                                                    >
-                                                        {sub.name}
-                                                    </Link>
+                                                    <div key={sub.name} className="flex items-center gap-1">
+                                                        <Link
+                                                            href={sub.href}
+                                                            className={`flex min-w-0 flex-1 items-center gap-3 pl-11 pr-3 py-2 text-sm rounded-lg transition-colors whitespace-nowrap
+                                                                ${pathname === sub.href ? "text-blue-600 font-semibold" : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"}`}
+                                                        >
+                                                            {sub.name}
+                                                        </Link>
+                                                        {sub.copyable && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => copyLink(sub.href)}
+                                                                className={`mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors cursor-pointer
+                                                                    ${copiedHref === sub.href ? "text-green-600 bg-green-50" : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"}`}
+                                                                aria-label={`Copiar link ${sub.name}`}
+                                                                title={`Copiar link ${sub.name}`}
+                                                            >
+                                                                {copiedHref === sub.href ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 ))}
                                             </div>
                                         </div>
