@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { sendPasswordResetEmailAction } from "@/app/actions/email";
+import { Edit3, KeyRound, Mail, Trash2 } from "lucide-react";
 import {
     collection,
     getDocs,
@@ -21,25 +22,93 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
+type AdminUserRow = {
+    id: string;
+    email?: string;
+    role?: string;
+    accountId?: string;
+    subAccountIds?: string[];
+    isAdmin?: boolean;
+};
+
+type PageRow = {
+    id: string;
+    title: string;
+    embedUrl: string;
+    accountId: string;
+    subAccountIds?: string[];
+};
+
+type AccountRow = {
+    id: string;
+    name: string;
+};
+
+type SubaccountRow = {
+    id: string;
+    name: string;
+    accountId: string;
+};
+
+function getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : "Erro desconhecido";
+}
+
+function getErrorCode(error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error) {
+        const code = (error as { code?: unknown }).code;
+        return typeof code === "string" ? code : undefined;
+    }
+    return undefined;
+}
+
+function ActionIconButton({
+    label,
+    onClick,
+    className,
+    children
+}: {
+    label: string;
+    onClick: () => void;
+    className: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            aria-label={label}
+            title={label}
+            onClick={onClick}
+            className={`group relative inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${className}`}
+        >
+            {children}
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block group-focus-visible:block">
+                {label}
+            </span>
+        </button>
+    );
+}
+
 export default function AdminDashboard() {
-    const { user, userData, loading, logout } = useAuth();
-    const { showAlert, showConfirm } = useUI();
+    const { user, userData, loading } = useAuth();
+    const { showConfirm } = useUI();
     const router = useRouter();
 
     const [activeTab, setActiveTab] = useState<"pages" | "users" | "accounts" | "subaccounts">("pages");
     const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
     
     // Data States
-    const [pages, setPages] = useState<any[]>([]);
-    const [usersList, setUsersList] = useState<any[]>([]);
-    const [accounts, setAccounts] = useState<any[]>([]);
-    const [subaccounts, setSubaccounts] = useState<any[]>([]);
+    const [pages, setPages] = useState<PageRow[]>([]);
+    const [usersList, setUsersList] = useState<AdminUserRow[]>([]);
+    const [accounts, setAccounts] = useState<AccountRow[]>([]);
+    const [subaccounts, setSubaccounts] = useState<SubaccountRow[]>([]);
 
     // Modals visibility
     const [showPageModal, setShowPageModal] = useState(false);
     const [showUserModal, setShowUserModal] = useState(false);
     const [showAccountModal, setShowAccountModal] = useState(false);
     const [showSubaccountModal, setShowSubaccountModal] = useState(false);
+    const [showTemporaryPasswordModal, setShowTemporaryPasswordModal] = useState(false);
 
     // Form States
     const [newPage, setNewPage] = useState<{ title: string; embedUrl: string; accountId: string; subAccountIds: string[] }>({
@@ -49,6 +118,8 @@ export default function AdminDashboard() {
 
     const [newUser, setNewUser] = useState({ email: "", role: "account_user", accountId: "", subAccountIds: [] as string[] });
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
+    const [temporaryPasswordUser, setTemporaryPasswordUser] = useState<AdminUserRow | null>(null);
+    const [temporaryPasswordForm, setTemporaryPasswordForm] = useState({ password: "", confirmPassword: "" });
 
     const [newAccount, setNewAccount] = useState({ name: "" });
     const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
@@ -81,23 +152,29 @@ export default function AdminDashboard() {
             await fetchSubaccounts();
             await fetchPages();
             await fetchUsers();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error fetching data:", error);
-            showNotification("error", "Erro ao carregar dados: " + (error?.message || "Erro desconhecido"));
+            showNotification("error", "Erro ao carregar dados: " + getErrorMessage(error));
         }
     };
 
     const isSuper = userData?.role === 'superadmin' || userData?.isAdmin === true;
+    const canSetTemporaryPassword = (targetUser: AdminUserRow) => {
+        if (targetUser.id === user?.uid) return false;
+        if (isSuper) return true;
+        if (userData?.role !== 'account_admin') return false;
+        return targetUser.accountId === userData?.accountId && (targetUser.role === 'account_user' || targetUser.role === 'subaccount_user');
+    };
 
     const fetchAccounts = async () => {
         if (isSuper) {
             const querySnapshot = await getDocs(collection(db, "accounts"));
-            setAccounts(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setAccounts(querySnapshot.docs.map(document => ({ id: document.id, ...(document.data() as Omit<AccountRow, "id">) })));
         } else if (userData?.accountId) {
             const docRef = doc(db, "accounts", userData.accountId);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
-                setAccounts([{ id: docSnap.id, ...docSnap.data() }]);
+                setAccounts([{ id: docSnap.id, ...(docSnap.data() as Omit<AccountRow, "id">) }]);
             } else {
                 setAccounts([]);
             }
@@ -110,7 +187,7 @@ export default function AdminDashboard() {
             : query(collection(db, "subaccounts"), where("accountId", "==", userData?.accountId || "none"));
 
         const querySnapshot = await getDocs(q);
-        setSubaccounts(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setSubaccounts(querySnapshot.docs.map(document => ({ id: document.id, ...(document.data() as Omit<SubaccountRow, "id">) })));
     };
 
     const fetchPages = async () => {
@@ -119,7 +196,7 @@ export default function AdminDashboard() {
             : query(collection(db, "pages"), where("accountId", "==", userData?.accountId || "none"));
 
         const querySnapshot = await getDocs(q);
-        setPages(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setPages(querySnapshot.docs.map(document => ({ id: document.id, ...(document.data() as Omit<PageRow, "id">) })));
     };
 
     const fetchUsers = async () => {
@@ -128,7 +205,7 @@ export default function AdminDashboard() {
             : query(collection(db, "users"), where("accountId", "==", userData?.accountId || "none"));
 
         const querySnapshot = await getDocs(q);
-        setUsersList(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setUsersList(querySnapshot.docs.map(document => ({ id: document.id, ...(document.data() as Omit<AdminUserRow, "id">) })));
     };
 
     const handleCreateAccount = async (e: React.FormEvent) => {
@@ -143,8 +220,8 @@ export default function AdminDashboard() {
             showNotification("success", "Empresa salva com sucesso!");
             setShowAccountModal(false);
             fetchAccounts();
-        } catch(e: any) {
-            showNotification("error", "Erro ao salvar empresa: " + e.message);
+        } catch(e: unknown) {
+            showNotification("error", "Erro ao salvar empresa: " + getErrorMessage(e));
         } finally { setIsSubmitting(false); }
     };
 
@@ -161,8 +238,8 @@ export default function AdminDashboard() {
             showNotification("success", "Subconta salva com sucesso!");
             setShowSubaccountModal(false);
             fetchSubaccounts();
-        } catch(e: any) {
-            showNotification("error", "Erro ao salvar subconta: " + e.message);
+        } catch(e: unknown) {
+            showNotification("error", "Erro ao salvar subconta: " + getErrorMessage(e));
         } finally { setIsSubmitting(false); }
     };
 
@@ -187,8 +264,8 @@ export default function AdminDashboard() {
             showNotification("success", "Relatório salvo com sucesso!");
             setShowPageModal(false);
             fetchPages();
-        } catch(e: any) {
-            showNotification("error", "Erro ao salvar relatório: " + e.message);
+        } catch(e: unknown) {
+            showNotification("error", "Erro ao salvar relatório: " + getErrorMessage(e));
         } finally { setIsSubmitting(false); }
     };
 
@@ -258,12 +335,12 @@ export default function AdminDashboard() {
             showNotification("success", "Usuário criado com sucesso! Um e-mail de configuração de senha foi enviado.");
             setShowUserModal(false);
             fetchUsers();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error creating/updating user:", error);
-            if (error.code === 'auth/email-already-in-use') {
+            if (getErrorCode(error) === 'auth/email-already-in-use') {
                 showNotification("error", "Este e-mail já está sendo usado no Firebase Auth. Se você excluiu este usuário recentemente, use um e-mail diferente ou restaure-o no console do Firebase.");
             } else {
-                showNotification("error", "Erro: " + error.message);
+                showNotification("error", "Erro: " + getErrorMessage(error));
             }
         } finally {
             setIsSubmitting(false);
@@ -278,9 +355,66 @@ export default function AdminDashboard() {
             } else {
                 showNotification("error", "Erro ao enviar e-mail: " + result.error);
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error sending reset email:", error);
-            showNotification("error", "Erro ao enviar e-mail: " + error.message);
+            showNotification("error", "Erro ao enviar e-mail: " + getErrorMessage(error));
+        }
+    };
+
+    const openTemporaryPasswordModal = (targetUser: AdminUserRow) => {
+        setTemporaryPasswordUser(targetUser);
+        setTemporaryPasswordForm({ password: "", confirmPassword: "" });
+        setShowTemporaryPasswordModal(true);
+    };
+
+    const closeTemporaryPasswordModal = () => {
+        setShowTemporaryPasswordModal(false);
+        setTemporaryPasswordUser(null);
+        setTemporaryPasswordForm({ password: "", confirmPassword: "" });
+    };
+
+    const handleSetTemporaryPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!temporaryPasswordUser || !user) return;
+
+        if (temporaryPasswordForm.password !== temporaryPasswordForm.confirmPassword) {
+            showNotification("error", "As senhas nao coincidem.");
+            return;
+        }
+
+        if (temporaryPasswordForm.password.length < 6) {
+            showNotification("error", "A senha provisória deve ter pelo menos 6 caracteres.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const idToken = await user.getIdToken();
+            const response = await fetch('/api/admin/set-temporary-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({
+                    uid: temporaryPasswordUser.id,
+                    temporaryPassword: temporaryPasswordForm.password
+                })
+            });
+
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || "Erro ao definir senha provisória");
+            }
+
+            showNotification("success", "Senha provisória definida. O usuário deverá entrar com ela e trocar a senha no primeiro acesso.");
+            closeTemporaryPasswordModal();
+            fetchUsers();
+        } catch (error: unknown) {
+            console.error("Error setting temporary password:", error);
+            showNotification("error", "Erro ao definir senha provisória: " + getErrorMessage(error));
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -322,9 +456,9 @@ export default function AdminDashboard() {
                 
                 showNotification("success", "Item excluído com sucesso!");
                 fetchFn();
-            } catch(e: any) {
+            } catch(e: unknown) {
                 console.error("Erro ao excluir:", e);
-                showNotification("error", "Erro ao excluir: " + e.message);
+                showNotification("error", "Erro ao excluir: " + getErrorMessage(e));
             }
         });
     };
@@ -378,8 +512,8 @@ export default function AdminDashboard() {
             </div>
 
             <div className="flex border-b border-gray-200 mb-8 overflow-x-auto">
-                {['pages', 'users', 'accounts', 'subaccounts'].filter(t => isSuper || t !== 'accounts').map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-6 py-3 font-semibold capitalize whitespace-nowrap cursor-pointer transition-colors ${activeTab === tab ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500 hover:text-gray-700"}`}>
+                {(['pages', 'users', 'accounts', 'subaccounts'] as const).filter(t => isSuper || t !== 'accounts').map(tab => (
+                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-semibold capitalize whitespace-nowrap cursor-pointer transition-colors ${activeTab === tab ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500 hover:text-gray-700"}`}>
                         {tab === 'pages' ? `Relatórios (${pages.length})` : 
                          tab === 'users' ? `Usuários (${usersList.length})` : 
                          tab === 'accounts' ? `Empresas (${accounts.length})` : 
@@ -456,11 +590,38 @@ export default function AdminDashboard() {
                                     <td className="p-4"><span className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full text-xs font-medium">{u.role || (u.isAdmin ? 'superadmin' : 'legacy')}</span></td>
                                     <td className="p-4 text-sm text-gray-600">{accounts.find(a => a.id === u.accountId)?.name || (u.accountId ? "Conta Deletada" : "-")}</td>
                                     <td className="p-4">
-                                        <div className="flex gap-4">
-                                            <button onClick={() => { setNewUser({email: u.email, role: u.role, accountId: u.accountId, subAccountIds: u.subAccountIds||[]}); setEditingUserId(u.id); setShowUserModal(true); }} className="text-blue-600 text-sm font-medium hover:underline cursor-pointer">Editar</button>
-                                            <button onClick={() => handleSendResetEmail(u.email)} className="text-orange-600 text-sm font-medium hover:underline cursor-pointer">Enviar Reset</button>
+                                        <div className="flex items-center gap-2">
+                                            <ActionIconButton
+                                                label="Editar"
+                                                onClick={() => { setNewUser({email: u.email || "", role: u.role || "account_user", accountId: u.accountId || "", subAccountIds: u.subAccountIds||[]}); setEditingUserId(u.id); setShowUserModal(true); }}
+                                                className="border-blue-100 bg-blue-50 text-blue-600 hover:bg-blue-100 focus:ring-blue-500"
+                                            >
+                                                <Edit3 size={16} strokeWidth={2.2} />
+                                            </ActionIconButton>
+                                            <ActionIconButton
+                                                label="Enviar reset por e-mail"
+                                                onClick={() => handleSendResetEmail(u.email || "")}
+                                                className="border-orange-100 bg-orange-50 text-orange-600 hover:bg-orange-100 focus:ring-orange-500"
+                                            >
+                                                <Mail size={16} strokeWidth={2.2} />
+                                            </ActionIconButton>
+                                            {canSetTemporaryPassword(u) && (
+                                                <ActionIconButton
+                                                    label="Definir senha provisória"
+                                                    onClick={() => openTemporaryPasswordModal(u)}
+                                                    className="border-purple-100 bg-purple-50 text-purple-600 hover:bg-purple-100 focus:ring-purple-500"
+                                                >
+                                                    <KeyRound size={16} strokeWidth={2.2} />
+                                                </ActionIconButton>
+                                            )}
                                             {u.id !== user?.uid && (
-                                                <button onClick={() => deleteItem("users", u.id, fetchUsers)} className="text-red-600 text-sm font-medium hover:underline cursor-pointer">Excluir</button>
+                                                <ActionIconButton
+                                                    label="Excluir"
+                                                    onClick={() => deleteItem("users", u.id, fetchUsers)}
+                                                    className="border-red-100 bg-red-50 text-red-600 hover:bg-red-100 focus:ring-red-500"
+                                                >
+                                                    <Trash2 size={16} strokeWidth={2.2} />
+                                                </ActionIconButton>
                                             )}
                                         </div>
                                     </td>
@@ -472,6 +633,53 @@ export default function AdminDashboard() {
             )}
 
             {/* Modals */}
+
+            {showTemporaryPasswordModal && temporaryPasswordUser && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-8 rounded-2xl max-w-md w-full shadow-2xl">
+                        <h2 className="text-xl font-bold mb-2">Definir senha provisória</h2>
+                        <p className="text-sm text-gray-500 mb-6">
+                            O usuário {temporaryPasswordUser.email} deverá entrar com esta senha e trocar no primeiro acesso.
+                        </p>
+
+                        <form onSubmit={handleSetTemporaryPassword} className="space-y-4">
+                            <div>
+                                <label className="block font-bold mb-2 text-sm text-gray-700">Senha provisória</label>
+                                <input
+                                    required
+                                    type="password"
+                                    minLength={6}
+                                    value={temporaryPasswordForm.password}
+                                    onChange={e => setTemporaryPasswordForm({ ...temporaryPasswordForm, password: e.target.value })}
+                                    className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2 text-sm text-gray-700">Confirmar senha provisória</label>
+                                <input
+                                    required
+                                    type="password"
+                                    minLength={6}
+                                    value={temporaryPasswordForm.confirmPassword}
+                                    onChange={e => setTemporaryPasswordForm({ ...temporaryPasswordForm, confirmPassword: e.target.value })}
+                                    className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-purple-500"
+                                />
+                            </div>
+
+                            <div className="bg-amber-50 text-amber-800 p-4 rounded-xl text-xs">
+                                A senha não será armazenada. Compartilhe-a com o usuário por um canal seguro.
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4">
+                                <button className="px-4 py-2 text-gray-500 font-medium cursor-pointer hover:bg-gray-50 rounded-lg" type="button" onClick={closeTemporaryPasswordModal}>Cancelar</button>
+                                <button disabled={isSubmitting} className="bg-purple-600 text-white px-6 py-2 rounded-xl font-bold cursor-pointer hover:bg-purple-700 disabled:opacity-50" type="submit">
+                                    {isSubmitting ? "Salvando..." : "Definir senha"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {showAccountModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
