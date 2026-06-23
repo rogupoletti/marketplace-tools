@@ -98,6 +98,7 @@ export interface ProdutoProcessado extends ProdutoRaw {
     status: StatusReposicao;
     curvaABC?: "A" | "B" | "C" | "Z";
     curvaABCFornecedor?: "A" | "B" | "C" | "Z";
+    inventoryHistory?: Record<string, number>;
 }
 
 export interface ParametrosGlobais {

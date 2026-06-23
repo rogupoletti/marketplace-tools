@@ -3,11 +3,11 @@ import { ProdutoRaw, VendaRaw, ParametrosGlobais, UserOverrides, ProdutoProcessa
 /**
  * Robust date parsing for strings or potential numeric formats.
  */
-function parseDateRobust(val: any): number {
+function parseDateRobust(val: unknown): number {
     if (!val) return NaN;
     if (val instanceof Date) return val.getTime();
 
-    let d = new Date(val).getTime();
+    let d = new Date(val as string | number).getTime();
     if (!isNaN(d)) return d;
 
     // Try DD/MM/YYYY
@@ -77,7 +77,8 @@ export function processProduct(
     vendas: VendaRaw[],
     parametros: ParametrosGlobais,
     overrides: UserOverrides,
-    maxSalesDate: Date | null
+    maxSalesDate: Date | null,
+    inventoryHistory?: Record<string, number>
 ): ProdutoProcessado {
     const { calculoGiroDias = 30, diasEstoquePadrao = 30, leadTime = 7, usarMediaGlobal = true } = parametros;
 
@@ -91,6 +92,15 @@ export function processProduct(
     const maxTs = referenceDate.getTime();
     const minTs = maxTs - (Number(calculoGiroDias) * 86400000);
 
+    const datesInPeriod: string[] = [];
+    for (let i = 0; i < Number(calculoGiroDias); i++) {
+        const d = new Date(referenceDate.getTime() - i * 24 * 60 * 60 * 1000);
+        const dateStr = d.toISOString().split("T")[0];
+        datesInPeriod.push(dateStr);
+    }
+
+    const salesByDate: Record<string, number> = {};
+
     if (Array.isArray(vendas)) {
         for (const v of vendas) {
             if (!v || !v.data) continue;
@@ -99,10 +109,10 @@ export function processProduct(
             if (isNaN(ts)) continue;
 
             if (ts > minTs && ts <= maxTs) {
-                // Support legacy field names for backwards compatibility
-                const qRaw = (v as any).vendaQtd ?? (v as any).vendaemquantidade ?? (v as any).vendaqtd ?? 0;
-                const vLiqRaw = (v as any).vendaValorLiquido ?? (v as any).vendaemvalor ?? (v as any).valor ?? 0;
-                const vBrutoRaw = (v as any).vendaValorBruto ?? (v as any).sales_amount ?? (v as any).salesamount ?? (v as any).valorbruto ?? 0;
+                const vRecord = v as unknown as Record<string, unknown>;
+                const qRaw = vRecord.vendaQtd ?? vRecord.vendaemquantidade ?? vRecord.vendaqtd ?? 0;
+                const vLiqRaw = vRecord.vendaValorLiquido ?? vRecord.vendaemvalor ?? vRecord.valor ?? 0;
+                const vBrutoRaw = vRecord.vendaValorBruto ?? vRecord.sales_amount ?? vRecord.salesamount ?? vRecord.valorbruto ?? 0;
 
                 const qtd = Number(qRaw) || 0;
                 vendasQtdPeriodo += qtd;
@@ -110,32 +120,56 @@ export function processProduct(
                 vendasValorBrutoPeriodo += Number(vBrutoRaw) || 0;
 
                 if (qtd > 0) {
-                    try {
-                        const dateStr = new Date(ts).toISOString().split('T')[0];
-                        diasComVendas.add(dateStr);
-                    } catch (e) {
-                        diasComVendas.add(String(v.data).split('T')[0]);
-                    }
+                    const dateStr = new Date(ts).toISOString().split('T')[0];
+                    salesByDate[dateStr] = (salesByDate[dateStr] || 0) + qtd;
+                    diasComVendas.add(dateStr);
                 }
             }
         }
     }
 
-    let diasInativos = Math.max(0, calculoGiroDias - diasComVendas.size);
-    let diasAtivos = Math.max(1, calculoGiroDias - diasInativos);
-    const initialGiro = vendasQtdPeriodo / diasAtivos;
-    const fullPeriodGiro = vendasQtdPeriodo / Math.max(1, calculoGiroDias);
+    // Passo 1: Cálculo híbrido dia a dia (regra padrão)
+    let diasInativosPass1 = 0;
+    for (const dateStr of datesInPeriod) {
+        if (inventoryHistory && inventoryHistory[dateStr] !== undefined) {
+            const stock = inventoryHistory[dateStr];
+            if (stock <= 0) {
+                diasInativosPass1++;
+            }
+        } else {
+            const salesQty = salesByDate[dateStr] || 0;
+            if (salesQty <= 0) {
+                diasInativosPass1++;
+            }
+        }
+    }
 
+    const diasAtivosPass1 = Math.max(1, Number(calculoGiroDias) - diasInativosPass1);
+    const initialGiro = vendasQtdPeriodo / diasAtivosPass1;
+    const fullPeriodGiro = vendasQtdPeriodo / Math.max(1, Number(calculoGiroDias));
+
+    let diasInativos = diasInativosPass1;
     let giroDiarioQtd = initialGiro;
 
-    // Regra para evitar falsos positivos de ruptura em produtos de baixo giro:
-    // Se o giro nos dias ativos for baixo (< 5) E o giro total no mês for baixo (< 1),
-    // consideramos que não houve ruptura (dias inativos = 0).
-    if (initialGiro < 5 && fullPeriodGiro < 1) {
-        diasInativos = 0;
-        diasAtivos = Math.max(1, calculoGiroDias);
-        giroDiarioQtd = fullPeriodGiro;
+    // Passo 2: Classificação de Baixo Giro e Ajuste Condicional
+    const isBaixoGiro = initialGiro < 5 && fullPeriodGiro < 1;
+
+    if (isBaixoGiro) {
+        let diasInativosAjustado = 0;
+        for (const dateStr of datesInPeriod) {
+            if (inventoryHistory && inventoryHistory[dateStr] !== undefined) {
+                const stock = inventoryHistory[dateStr];
+                if (stock <= 0) {
+                    diasInativosAjustado++;
+                }
+            }
+        }
+        diasInativos = diasInativosAjustado;
+        const diasAtivosAjustado = Math.max(1, Number(calculoGiroDias) - diasInativos);
+        giroDiarioQtd = vendasQtdPeriodo / diasAtivosAjustado;
     }
+
+    const diasAtivos = Math.max(1, Number(calculoGiroDias) - diasInativos);
 
     const giroDiarioValorLiquido = vendasValorLiquidoPeriodo / diasAtivos;
     const giroDiarioValorBruto = vendasValorBrutoPeriodo / diasAtivos;
@@ -232,6 +266,7 @@ export function processProduct(
         numCaixas,
         emTransf,
         overrides,
-        status
+        status,
+        inventoryHistory
     };
 }

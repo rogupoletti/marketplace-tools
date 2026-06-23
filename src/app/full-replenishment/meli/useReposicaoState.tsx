@@ -145,6 +145,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
     const [colunasVisiveis, setColunasVisiveisState] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [mlInventory, setMlInventory] = useState<Record<string, number>>({});
+    const [mlInventoryHistory, setMlInventoryHistory] = useState<Record<string, Record<string, number>>>({});
     const [isFetchingMl, setIsFetchingMl] = useState(false);
     const [isFetchingSales, setIsFetchingSales] = useState(false);
 
@@ -200,6 +201,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             fetchVendasAnymarket().catch(() => {});
             fetchMlInventory().catch(() => {});
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, isLoaded]);
 
     const setProdutosRaw = (p: ProdutoRaw[]) => {
@@ -236,17 +238,18 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
         if (!user || isFetchingMl) return;
         setIsFetchingMl(true);
         try {
-            console.log("[Reposicao] Fetching ML inventory from API...");
+            console.log("[Reposicao] Fetching ML inventory and history from API...");
             const idToken = await user.getIdToken();
-            const res = await fetch("/api/integrations/mercadolivre/inventory", {
+            const res = await fetch("/api/integrations/mercadolivre/inventory?days=90", {
                 headers: { "Authorization": `Bearer ${idToken}` }
             });
             const data = await res.json();
             
             if (!res.ok) throw new Error(data.error || "Erro ao buscar inventário");
 
-            console.log(`[Reposicao] Loaded inventory for ${Object.keys(data.inventory || {}).length} MLBs from API`);
+            console.log(`[Reposicao] Loaded inventory for ${Object.keys(data.inventory || {}).length} MLBs and history for ${Object.keys(data.inventoryHistory || {}).length} MLBs from API`);
             setMlInventory(data.inventory || {});
+            setMlInventoryHistory(data.inventoryHistory || {});
         } catch (e) {
             console.error("Erro ao buscar inventário do ML via API:", e);
         } finally {
@@ -469,7 +472,26 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
                 estoqueFull: foundInApi ? maxEstoqueApi : prod.estoqueFull 
             };
 
-            return processProduct(prodWithUpdatedStock, vendas, parametros, overrides, maxSalesDate);
+            // Merge histories of associated MLBs (if multiple)
+            let mergedHistory: Record<string, number> | undefined = undefined;
+            rawMlbs.forEach(normalized => {
+                let itemHistory = mlInventoryHistory[normalized];
+                if (!itemHistory) {
+                    const original = combinedMlbStr.split(/[,\;\s\n]+/).find(s => normalizeMlb(s.trim()) === normalized);
+                    if (original) {
+                        itemHistory = mlInventoryHistory[original];
+                    }
+                }
+                if (itemHistory) {
+                    if (!mergedHistory) mergedHistory = {};
+                    for (const dateStr in itemHistory) {
+                        const stockVal = itemHistory[dateStr];
+                        mergedHistory[dateStr] = Math.max(mergedHistory[dateStr] || 0, stockVal);
+                    }
+                }
+            });
+
+            return processProduct(prodWithUpdatedStock, vendas, parametros, overrides, maxSalesDate, mergedHistory);
         });
 
         if (processed.length === 0) return [];
@@ -526,7 +548,7 @@ export function ReposicaoProvider({ children }: { children: ReactNode }) {
             curvaABCFornecedor: abcMapSupplier[p.sku] || "Z"
         }));
 
-    }, [produtosRaw, vendasRaw, parametros, maxSalesDate, mlInventory]);
+    }, [produtosRaw, vendasRaw, parametros, maxSalesDate, mlInventory, mlInventoryHistory]);
 
     const produtosFiltrados = useMemo(() => {
         return produtosProcessados.filter(item => {

@@ -23,7 +23,13 @@ export async function GET(request: Request) {
 
         console.log(`[API ML Inventory] Fetching for account: ${accountId}`);
 
-        // Buscar o inventário mais recente no Firestore via Admin SDK
+        // Parse parameter 'days' (default: 90)
+        const { searchParams } = new URL(request.url);
+        const daysParam = searchParams.get("days");
+        const days = daysParam ? parseInt(daysParam, 10) : 90;
+        const queryDays = isNaN(days) || days <= 0 ? 90 : days;
+
+        // Buscar o inventário no Firestore via Admin SDK
         const inventoryRef = adminDb.collection("accounts").doc(accountId).collection("ml_full_inventory");
         
         // 1. Descobrir qual é o timestamp do snapshot mais recente
@@ -34,7 +40,7 @@ export async function GET(request: Request) {
 
         if (latestDoc.empty) {
             console.log(`[API ML Inventory] No inventory found for account: ${accountId}`);
-            return NextResponse.json({ success: true, inventory: {}, count: 0 });
+            return NextResponse.json({ success: true, inventory: {}, inventoryHistory: {}, count: 0 });
         }
 
         const latestTimestamp = latestDoc.docs[0].data().snapshot_at;
@@ -57,15 +63,45 @@ export async function GET(request: Request) {
             }
         });
 
-        console.log(`[API ML Inventory] Found ${Object.keys(inventoryMap).length} items`);
+        // 3. Buscar histórico de snapshots do período selecionado
+        const minTimestamp = Date.now() - (queryDays * 24 * 60 * 60 * 1000);
+        console.log(`[API ML Inventory] Fetching history from: ${new Date(minTimestamp).toISOString()}`);
+        
+        const historySnapshot = await inventoryRef
+            .where("snapshot_at", ">=", minTimestamp)
+            .orderBy("snapshot_at", "asc")
+            .get();
+
+        const inventoryHistory: Record<string, Record<string, number>> = {};
+
+        historySnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const itemId = data.item_id;
+            const snapshotAt = data.snapshot_at;
+            const qty = data.available_quantity ?? 0;
+
+            if (itemId && typeof snapshotAt === "number") {
+                const dateStr = new Date(snapshotAt).toISOString().split("T")[0];
+
+                if (!inventoryHistory[itemId]) {
+                    inventoryHistory[itemId] = {};
+                }
+                // Because snapshot_at is ordered asc, later snapshots overwrite earlier ones for the same day
+                inventoryHistory[itemId][dateStr] = qty;
+            }
+        });
+
+        console.log(`[API ML Inventory] Found ${Object.keys(inventoryMap).length} items and historical snapshots for ${Object.keys(inventoryHistory).length} items`);
 
         return NextResponse.json({ 
             success: true, 
             inventory: inventoryMap,
+            inventoryHistory: inventoryHistory,
             count: Object.keys(inventoryMap).length
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("[API ML Inventory] Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }
