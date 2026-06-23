@@ -386,6 +386,7 @@ export default function ReturnsPage() {
     const [searchField, setSearchField] = useState("all");
     const [searchQuery, setSearchQuery] = useState("");
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [focusedSuggestionIndex, setFocusedSuggestionIndex] = useState<number>(-1);
     const searchRef = useRef<HTMLDivElement>(null);
 
     const suggestions = useMemo(() => {
@@ -415,6 +416,7 @@ export default function ReturnsPage() {
         fetchReturnDetail(item);
         setSearchQuery("");
         setShowSuggestions(false);
+        setFocusedSuggestionIndex(-1);
     };
     const isSuper = userData?.role === "superadmin" || userData?.isAdmin === true;
     const canAccess =
@@ -502,14 +504,6 @@ export default function ReturnsPage() {
             if (filters.channel !== "all" && item.channel !== filters.channel) return false;
             if (filters.returnType !== "all" && item.returnType !== filters.returnType) return false;
             if (filters.status !== "all" && item.status !== filters.status) return false;
-            if (
-                filters.orderNumber.trim() &&
-                !item.orderNumber.toLowerCase().includes(filters.orderNumber.trim().toLowerCase())
-            ) return false;
-            if (
-                filters.invoiceNumber.trim() &&
-                !(item.invoiceNumber || "").toLowerCase().includes(filters.invoiceNumber.trim().toLowerCase())
-            ) return false;
             if (filters.dateFrom && item.returnDate < filters.dateFrom) return false;
             if (filters.dateTo && item.returnDate > filters.dateTo) return false;
             return true;
@@ -1033,7 +1027,10 @@ export default function ReturnsPage() {
                         <select
                             aria-label="Tipo de busca"
                             value={searchField}
-                            onChange={(e) => setSearchField(e.target.value)}
+                            onChange={(e) => {
+                                setSearchField(e.target.value);
+                                setFocusedSuggestionIndex(-1);
+                            }}
                             className="bg-transparent border-r border-gray-200 rounded-l-lg py-1.5 pl-3 pr-8 text-xs text-gray-500 font-semibold focus:outline-none focus:ring-0 cursor-pointer h-full outline-none"
                         >
                             <option value="all">Todos</option>
@@ -1051,15 +1048,41 @@ export default function ReturnsPage() {
                                     const val = e.target.value;
                                     setSearchQuery(val);
                                     setShowSuggestions(val.trim().length >= 2);
+                                    setFocusedSuggestionIndex(-1);
                                 }}
                                 onFocus={() => {
                                     if (searchQuery.trim().length >= 2) {
                                         setShowSuggestions(true);
+                                        setFocusedSuggestionIndex(-1);
                                     }
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === "Escape") {
                                         setShowSuggestions(false);
+                                        setFocusedSuggestionIndex(-1);
+                                    } else if (e.key === "ArrowDown") {
+                                        if (showSuggestions && suggestions.length > 0) {
+                                            e.preventDefault();
+                                            setFocusedSuggestionIndex((prev) => 
+                                                prev < suggestions.length - 1 ? prev + 1 : 0
+                                            );
+                                        }
+                                    } else if (e.key === "ArrowUp") {
+                                        if (showSuggestions && suggestions.length > 0) {
+                                            e.preventDefault();
+                                            setFocusedSuggestionIndex((prev) => 
+                                                prev > 0 ? prev - 1 : suggestions.length - 1
+                                            );
+                                        }
+                                    } else if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        if (showSuggestions && suggestions.length > 0 && focusedSuggestionIndex >= 0 && focusedSuggestionIndex < suggestions.length) {
+                                            handleSelectSuggestion(suggestions[focusedSuggestionIndex].item);
+                                        } else if (suggestions.length === 1) {
+                                            handleSelectSuggestion(suggestions[0].item);
+                                        } else if (suggestions.length === 0 && searchQuery.trim().length > 0) {
+                                            showAlert("Erro", "Nenhuma devolução localizada para o código informado", "error");
+                                        }
                                     }
                                 }}
                                 className="bg-transparent flex-1 py-1.5 pl-3 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 outline-none w-full"
@@ -1070,6 +1093,7 @@ export default function ReturnsPage() {
                                     onClick={() => {
                                         setSearchQuery("");
                                         setShowSuggestions(false);
+                                        setFocusedSuggestionIndex(-1);
                                     }}
                                     aria-label="Limpar busca"
                                     className="absolute right-2.5 text-gray-400 hover:text-gray-600 focus:outline-none"
@@ -1079,17 +1103,19 @@ export default function ReturnsPage() {
                             )}
 
                             {showSuggestions && searchQuery.trim().length >= 2 && (
-                                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-64 divide-y divide-gray-100">
+                                <div data-testid="search-suggestions-container" className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-y-auto max-h-64 divide-y divide-gray-100">
                                     {suggestions.length === 0 ? (
                                         <div className="p-4 text-sm text-gray-500 text-center">
                                             Nenhuma devolução encontrada para &apos;{searchQuery}&apos;
                                         </div>
                                     ) : (
-                                        suggestions.map(({ item, details }) => (
+                                        suggestions.map(({ item, details }, index) => (
                                             <div
                                                 key={item.id}
                                                 onClick={() => handleSelectSuggestion(item)}
-                                                className="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer transition-colors focus:bg-gray-50 outline-none"
+                                                className={`flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer transition-colors focus:bg-gray-50 outline-none ${
+                                                    index === focusedSuggestionIndex ? "bg-gray-100" : ""
+                                                }`}
                                             >
                                                 <div className="flex items-center">
                                                     {item.channel === "meli" ? (
