@@ -8,6 +8,7 @@ const storageBucket =
 
 if (!admin.apps.length) {
   try {
+    const isEmulator = process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST;
     if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
       // Local development with service account key
       admin.initializeApp({
@@ -20,6 +21,13 @@ if (!admin.apps.length) {
         storageBucket,
       });
       console.log("Firebase Admin initialized with service account certificate (Local/Env)");
+    } else if (isEmulator) {
+      // Initialize for local emulator without needing credentials
+      admin.initializeApp({
+        projectId,
+        storageBucket,
+      });
+      console.log("Firebase Admin initialized for Emulator (Local)");
     } else {
       // Production on Google Cloud/Firebase: use Application Default Credentials (ADC)
       admin.initializeApp({ storageBucket });
