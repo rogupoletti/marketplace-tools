@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
+import type { Query } from "firebase-admin/firestore";
 import { MarketplaceReturn } from "@/lib/returns";
 import { getReturnsAccess } from "@/server/returns/access";
 import { parseReturnCreatePayload } from "@/server/returns/validation";
@@ -10,19 +11,33 @@ function withoutUndefined<T extends Record<string, unknown>>(data: T): T {
     ) as T;
 }
 
+function normalizedDateParam(value: string | null) {
+    const trimmed = value?.trim();
+    return trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
 export async function GET(request: NextRequest) {
     try {
         const requestedAccountId = request.nextUrl.searchParams.get("accountId");
+        const dateFrom = normalizedDateParam(request.nextUrl.searchParams.get("dateFrom"));
+        const dateTo = normalizedDateParam(request.nextUrl.searchParams.get("dateTo"));
         const accessResult = await getReturnsAccess(request, requestedAccountId);
         if ("response" in accessResult) return accessResult.response;
 
         const { accountId } = accessResult.access;
-        const snapshot = await adminDb
+        let returnsQuery: Query = adminDb
             .collection("accounts")
             .doc(accountId)
-            .collection("returns")
-            .orderBy("updatedAt", "desc")
-            .get();
+            .collection("returns");
+
+        if (dateFrom) returnsQuery = returnsQuery.where("returnDate", ">=", dateFrom);
+        if (dateTo) returnsQuery = returnsQuery.where("returnDate", "<=", dateTo);
+
+        returnsQuery = dateFrom || dateTo
+            ? returnsQuery.orderBy("returnDate", "desc")
+            : returnsQuery.orderBy("updatedAt", "desc");
+
+        const snapshot = await returnsQuery.get();
 
         const returns = snapshot.docs.map((doc) => ({
             id: doc.id,

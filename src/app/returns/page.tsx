@@ -7,13 +7,15 @@ import {
     AlertTriangle,
     CalendarDays,
     Camera,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     CheckCircle2,
     ClipboardList,
     Download,
     Edit3,
     ExternalLink,
     FileText,
-    Filter,
     Hand,
     Loader2,
     MoreVertical,
@@ -130,6 +132,31 @@ const PROBLEM_TYPE_LABELS: Record<ReturnProblemType, string> = {
     other: "Outro",
 };
 
+const DATE_FILTER_PRESETS = [
+    { key: "today", label: "Hoje" },
+    { key: "yesterday", label: "Ontem" },
+    { key: "last7", label: "Últimos 7 dias" },
+    { key: "last30", label: "Últimos 30 dias" },
+    { key: "month", label: "Este Mês" },
+    { key: "all", label: "Todo o período" },
+] as const;
+
+const WEEKDAY_LABELS = ["D", "S", "T", "Q", "Q", "S", "S"];
+const MONTH_LABELS = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+];
+
 function formatDate(date: string | undefined) {
     if (!date) return "-";
     const [year, month, day] = date.split("-");
@@ -154,6 +181,64 @@ function addDays(date: string | undefined, days: number) {
     const parsed = new Date(Date.UTC(year, month - 1, day));
     parsed.setUTCDate(parsed.getUTCDate() + days);
     return parsed.toISOString().slice(0, 10);
+}
+
+function toDateInputValue(date: Date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function parseDateInput(value: string | undefined) {
+    if (!value) return null;
+    const [year, month, day] = value.split("-").map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+}
+
+function addLocalDays(date: Date, days: number) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+}
+
+function startOfToday() {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+function getPresetDateRange(preset: typeof DATE_FILTER_PRESETS[number]["key"]) {
+    const today = startOfToday();
+
+    if (preset === "all") {
+        return { from: "", to: "" };
+    }
+
+    if (preset === "today") {
+        const value = toDateInputValue(today);
+        return { from: value, to: value };
+    }
+
+    if (preset === "yesterday") {
+        const value = toDateInputValue(addLocalDays(today, -1));
+        return { from: value, to: value };
+    }
+
+    if (preset === "last7") {
+        return { from: toDateInputValue(addLocalDays(today, -6)), to: toDateInputValue(today) };
+    }
+
+    if (preset === "last30") {
+        return { from: toDateInputValue(addLocalDays(today, -29)), to: toDateInputValue(today) };
+    }
+
+    return { from: toDateInputValue(new Date(today.getFullYear(), today.getMonth(), 1)), to: toDateInputValue(today) };
+}
+
+function sameDateRange(range: { from: string; to: string }, preset: typeof DATE_FILTER_PRESETS[number]["key"]) {
+    const presetRange = getPresetDateRange(preset);
+    return range.from === presetRange.from && range.to === presetRange.to;
 }
 
 function shouldShowDisputeDeadline(status: ReturnStatus) {
@@ -707,7 +792,6 @@ export default function ReturnsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [dropTargetStatus, setDropTargetStatus] = useState<ReturnStatus | null>(null);
-    const [isFiltersOpen, setIsFiltersOpen] = useState(true);
     const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
     const [pendingIssueReturn, setPendingIssueReturn] = useState<MarketplaceReturn | null>(null);
     const [pendingIssueText, setPendingIssueText] = useState("");
@@ -728,21 +812,28 @@ export default function ReturnsPage() {
     const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
     const [selectedAccountId, setSelectedAccountId] = useState("");
 
-    const [filters, setFilters] = useState({
-        channel: "all",
-        returnType: "all",
-        status: "all",
-        orderNumber: "",
-        invoiceNumber: "",
-        dateFrom: "",
-        dateTo: "",
+    const [filters, setFilters] = useState(() => {
+        const defaultRange = getPresetDateRange("last30");
+        return {
+            channel: "all",
+            returnType: "all",
+            status: "all",
+            orderNumber: "",
+            invoiceNumber: "",
+            dateFrom: defaultRange.from,
+            dateTo: defaultRange.to,
+        };
     });
 
-    const [searchField, setSearchField] = useState("all");
+    const searchField = "all";
     const [searchQuery, setSearchQuery] = useState("");
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [focusedSuggestionIndex, setFocusedSuggestionIndex] = useState<number>(-1);
+    const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
+    const [draftDateRange, setDraftDateRange] = useState({ from: "", to: "" });
+    const [calendarMonth, setCalendarMonth] = useState(() => startOfToday());
     const searchRef = useRef<HTMLDivElement>(null);
+    const dateFilterRef = useRef<HTMLDivElement>(null);
 
     const suggestions = useMemo(() => {
         if (searchQuery.trim().length < 2) return [];
@@ -759,6 +850,9 @@ export default function ReturnsPage() {
         const handleClickOutside = (event: MouseEvent) => {
             if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
                 setShowSuggestions(false);
+            }
+            if (dateFilterRef.current && !dateFilterRef.current.contains(event.target as Node)) {
+                setIsDateFilterOpen(false);
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
@@ -832,6 +926,15 @@ export default function ReturnsPage() {
         return "";
     }, [isSuper, selectedAccountId]);
 
+    const returnsListQuery = useMemo(() => {
+        const params = new URLSearchParams();
+        if (isSuper && selectedAccountId) params.set("accountId", selectedAccountId);
+        if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+        if (filters.dateTo) params.set("dateTo", filters.dateTo);
+        const queryString = params.toString();
+        return queryString ? `?${queryString}` : "";
+    }, [filters.dateFrom, filters.dateTo, isSuper, selectedAccountId]);
+
     const showToast = (message: string, type: "success" | "error" = "success") => {
         setToast({ type, message });
         window.setTimeout(() => setToast(null), 3000);
@@ -846,7 +949,7 @@ export default function ReturnsPage() {
         setIsLoading(true);
         try {
             const token = await user.getIdToken();
-            const response = await fetch(`/api/returns${accountQuery}`, {
+            const response = await fetch(`/api/returns${returnsListQuery}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await response.json();
@@ -858,7 +961,7 @@ export default function ReturnsPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [accountQuery, canAccess, isSuper, selectedAccountId, showAlert, user]);
+    }, [canAccess, isSuper, returnsListQuery, selectedAccountId, showAlert, user]);
 
     useEffect(() => {
         if (!loading && user && canAccess) {
@@ -1478,6 +1581,109 @@ export default function ReturnsPage() {
         });
     };
 
+    const dateRangeLabel = useMemo(() => {
+        const range = { from: filters.dateFrom, to: filters.dateTo };
+        if (!range.from && !range.to) return "Todo o período";
+
+        const matchedPreset = DATE_FILTER_PRESETS.find((preset) => sameDateRange(range, preset.key));
+        if (matchedPreset) return matchedPreset.label;
+        if (range.from && range.to) return `${formatDate(range.from)} - ${formatDate(range.to)}`;
+        if (range.from) return `Desde ${formatDate(range.from)}`;
+        return `Até ${formatDate(range.to)}`;
+    }, [filters.dateFrom, filters.dateTo]);
+
+    const activeFilterCount = [
+        filters.channel !== "all",
+        filters.returnType !== "all",
+        filters.status !== "all",
+        Boolean(filters.dateFrom || filters.dateTo),
+    ].filter(Boolean).length;
+
+    const openDateFilter = () => {
+        const initialRange = {
+            from: filters.dateFrom,
+            to: filters.dateTo,
+        };
+        setDraftDateRange(initialRange);
+        const anchorDate = parseDateInput(initialRange.from) || startOfToday();
+        setCalendarMonth(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1));
+        setIsDateFilterOpen(true);
+    };
+
+    const selectPresetDateRange = (preset: typeof DATE_FILTER_PRESETS[number]["key"]) => {
+        const range = getPresetDateRange(preset);
+        setDraftDateRange(range);
+        const fromDate = parseDateInput(range.from) || startOfToday();
+        setCalendarMonth(new Date(fromDate.getFullYear(), fromDate.getMonth(), 1));
+    };
+
+    const selectCalendarDate = (value: string) => {
+        setDraftDateRange((current) => {
+            if (!current.from || current.to) return { from: value, to: "" };
+            if (value < current.from) return { from: value, to: current.from };
+            return { ...current, to: value };
+        });
+    };
+
+    const applyDateFilter = () => {
+        setFilters((current) => ({
+            ...current,
+            dateFrom: draftDateRange.from,
+            dateTo: draftDateRange.to || draftDateRange.from,
+        }));
+        setIsDateFilterOpen(false);
+    };
+
+    const renderCalendarMonth = (monthDate: Date) => {
+        const year = monthDate.getFullYear();
+        const month = monthDate.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const blanks = Array.from({ length: firstDay.getDay() });
+        const days = Array.from({ length: daysInMonth }, (_, index) => index + 1);
+
+        return (
+            <div className="min-w-[118px]">
+                <div className="mb-3 text-xs font-bold text-[#182344]">
+                    {MONTH_LABELS[month]} {year}
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-slate-400">
+                    {WEEKDAY_LABELS.map((weekday, index) => (
+                        <span key={`${weekday}-${index}`}>{weekday}</span>
+                    ))}
+                </div>
+                <div className="mt-1 grid grid-cols-7 gap-1">
+                    {blanks.map((_, index) => (
+                        <span key={`blank-${index}`} className="h-6" />
+                    ))}
+                    {days.map((day) => {
+                        const value = toDateInputValue(new Date(year, month, day));
+                        const isStart = draftDateRange.from === value;
+                        const isEnd = draftDateRange.to === value;
+                        const isInsideRange = draftDateRange.from && draftDateRange.to && value > draftDateRange.from && value < draftDateRange.to;
+                        const isSelected = isStart || isEnd;
+
+                        return (
+                            <button
+                                key={value}
+                                type="button"
+                                onClick={() => selectCalendarDate(value)}
+                                className={[
+                                    "h-6 rounded-[4px] text-[11px] font-semibold transition-colors",
+                                    isSelected ? "bg-[#2d3277] text-white" : "",
+                                    isInsideRange ? "bg-blue-50 text-[#2d3277]" : "",
+                                    !isSelected && !isInsideRange ? "text-slate-600 hover:bg-slate-100" : "",
+                                ].join(" ")}
+                            >
+                                {day}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
+
     if (loading || !user || !userData || (!canAccess && userData.role !== undefined)) {
         return (
             <div className="flex items-center justify-center h-[calc(100vh-80px)]">
@@ -1508,97 +1714,17 @@ export default function ReturnsPage() {
                     </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3">
-                    {isSuper && (
-                        <select
-                            value={selectedAccountId}
-                            onChange={(event) => setSelectedAccountId(event.target.value)}
-                            className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#2d3277]/20"
-                        >
-                            <option value="">Selecione uma conta</option>
-                            {accounts.map((account) => (
-                                <option key={account.id} value={account.id}>{account.name}</option>
-                            ))}
-                        </select>
-                    )}
-                    <button
-                        onClick={fetchReturns}
-                        disabled={isLoading || (isSuper && !selectedAccountId)}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 text-sm font-medium"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-                        Atualizar
-                    </button>
-                    <div className="relative">
-                        <button
-                            onClick={() => setIsExportMenuOpen((current) => !current)}
-                            disabled={isExporting || isLoading || returns.length === 0 || (isSuper && !selectedAccountId)}
-                            className="inline-flex w-full items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                        >
-                            {isExporting ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Download className="w-4 h-4" />
-                            )}
-                            Exportar Excel
-                        </button>
-                        {isExportMenuOpen && (
-                            <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl">
-                                <button
-                                    type="button"
-                                    onClick={() => handleExportExcel("filtered")}
-                                    className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                                >
-                                    Filtro atual ({filteredReturns.length})
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleExportExcel("all")}
-                                    className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                                >
-                                    Todas ({returns.length})
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                    <button
-                        onClick={openCreateForm}
-                        disabled={isSuper && !selectedAccountId}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#2d3277] text-white rounded-lg hover:bg-[#252963] disabled:opacity-50 text-sm font-semibold shadow-sm"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Nova Devolução
-                    </button>
-                </div>
             </div>
 
-            <section className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 mb-5">
-                <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2">
-                        <Search className="w-4 h-4 text-[#2d3277]" />
-                        <h2 className="text-sm font-bold text-gray-800">Busca</h2>
-                    </div>
+            <section className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 mb-5">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                     
-                    <div ref={searchRef} className="relative flex items-center border border-gray-200 rounded-lg bg-gray-50 focus-within:ring-2 focus-within:ring-[#2d3277]/20 focus-within:border-[#2d3277]/30 transition-all w-full max-w-3xl">
-                        <select
-                            aria-label="Tipo de busca"
-                            value={searchField}
-                            onChange={(e) => {
-                                setSearchField(e.target.value);
-                                setFocusedSuggestionIndex(-1);
-                            }}
-                            className="bg-transparent border-r border-gray-200 rounded-l-lg py-1.5 pl-3 pr-8 text-xs text-gray-500 font-semibold focus:outline-none focus:ring-0 cursor-pointer h-full outline-none"
-                        >
-                            <option value="all">Todos</option>
-                            <option value="order">Pedido</option>
-                            <option value="tracking">Rastreio</option>
-                            <option value="invoice">Nota Fiscal</option>
-                            <option value="returnId">ID Devolução</option>
-                        </select>
+                    <div ref={searchRef} className="relative flex h-10 min-w-0 flex-1 items-center border border-gray-200 rounded-lg bg-gray-50 focus-within:ring-2 focus-within:ring-[#2d3277]/20 focus-within:border-[#2d3277]/30 transition-all">
+                        <Search className="absolute left-3.5 h-4 w-4 text-gray-400" />
                         <div className="relative flex-1 flex items-center">
                             <input
                                 type="text"
-                                placeholder="Buscar devolução..."
+                                placeholder="Buscar pedido, cliente ou código..."
                                 value={searchQuery}
                                 onChange={(e) => {
                                     const val = e.target.value;
@@ -1641,7 +1767,7 @@ export default function ReturnsPage() {
                                         }
                                     }
                                 }}
-                                className="bg-transparent flex-1 py-1.5 pl-3 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 outline-none w-full"
+                                className="bg-transparent flex-1 py-1.5 pl-10 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-0 outline-none w-full"
                             />
                             {searchQuery && (
                                 <button
@@ -1711,104 +1837,198 @@ export default function ReturnsPage() {
                             )}
                         </div>
                     </div>
+                    <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+                        <button
+                            onClick={fetchReturns}
+                            disabled={isLoading || (isSuper && !selectedAccountId)}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-[#182344] hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                            Atualizar
+                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={() => setIsExportMenuOpen((current) => !current)}
+                                disabled={isExporting || isLoading || returns.length === 0 || (isSuper && !selectedAccountId)}
+                                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-[#182344] hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isExporting ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Download className="h-4 w-4" />
+                                )}
+                                Exportar Excel
+                            </button>
+                            {isExportMenuOpen && (
+                                <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleExportExcel("filtered")}
+                                        className="w-full px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Filtro atual ({filteredReturns.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleExportExcel("all")}
+                                        className="w-full border-t border-gray-100 px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Todas ({returns.length})
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={openCreateForm}
+                            disabled={isSuper && !selectedAccountId}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#050b2f] px-4 text-sm font-bold text-white shadow-sm hover:bg-[#11194a] disabled:opacity-50"
+                        >
+                            <Plus className="h-4 w-4" />
+                            Nova Devolução
+                        </button>
+                    </div>
                 </div>
             </section>
 
-            <section className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 mb-5">
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                        <Filter className="w-4 h-4 text-[#2d3277]" />
-                        <h2 className="text-sm font-bold text-gray-800">Filtros</h2>
-                        <span className="text-xs text-gray-400">{filteredReturns.length} de {returns.length} devoluções</span>
-                    </div>
+            <section className="bg-white border border-gray-100 rounded-xl shadow-sm p-3 mb-5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div ref={dateFilterRef} className="relative">
+                            <button
+                                type="button"
+                                onClick={openDateFilter}
+                                className="inline-flex h-8 items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-[#182344] transition-colors hover:bg-white"
+                            >
+                                <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
+                                {dateRangeLabel}
+                                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                            </button>
+                            {isDateFilterOpen && (
+                                <div className="absolute left-0 z-40 mt-2 w-[min(92vw,440px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+                                    <div className="grid grid-cols-[150px_1fr]">
+                                        <div className="bg-gray-50 p-3">
+                                            <div className="space-y-1">
+                                                {DATE_FILTER_PRESETS.map((preset) => {
+                                                    const isActive = sameDateRange(draftDateRange, preset.key);
+                                                    return (
+                                                        <button
+                                                            key={preset.key}
+                                                            type="button"
+                                                            onClick={() => selectPresetDateRange(preset.key)}
+                                                            className={`w-full rounded-md px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                                                                isActive ? "bg-white text-[#2d3277] shadow-sm" : "text-[#182344] hover:bg-white"
+                                                            }`}
+                                                        >
+                                                            {preset.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div className="p-4">
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+                                                    className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-[#182344]"
+                                                    aria-label="Mês anterior"
+                                                >
+                                                    <ChevronLeft className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+                                                    className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-[#182344]"
+                                                    aria-label="Próximo mês"
+                                                >
+                                                    <ChevronRight className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <div className="flex gap-5">
+                                                {renderCalendarMonth(calendarMonth)}
+                                                {renderCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                                            </div>
+                                            <div className="mt-4 flex items-center justify-end gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsDateFilterOpen(false)}
+                                                    className="rounded-lg px-3 py-2 text-xs font-semibold text-[#182344] hover:bg-gray-50"
+                                                >
+                                                    Cancelar
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={applyDateFilter}
+                                                    className="rounded-lg bg-[#050b2f] px-4 py-2 text-xs font-bold text-white hover:bg-[#11194a]"
+                                                >
+                                                    Aplicar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
-                    <button
-                        onClick={() => setIsFiltersOpen((current) => !current)}
-                        className="px-3 py-1.5 text-sm font-semibold text-[#2d3277] hover:bg-blue-50 rounded-lg"
-                    >
-                        {isFiltersOpen ? "Ocultar filtros" : "Mostrar filtros"}
-                    </button>
-                </div>
+                        <span className="hidden h-5 w-px bg-gray-200 md:inline-block" />
 
-                {isFiltersOpen && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">Canal</span>
                         <select
                             value={filters.channel}
                             onChange={(event) => setFilters((current) => ({ ...current, channel: event.target.value }))}
-                            className="mt-1 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
+                            className="h-8 rounded-md border border-gray-200 bg-gray-50 px-3 pr-8 text-xs font-semibold text-[#182344] outline-none hover:bg-white focus:ring-2 focus:ring-[#2d3277]/20"
                         >
-                            <option value="all">Todos</option>
+                            <option value="all">Todos Canais</option>
                             {RETURN_CHANNELS.map((channel) => (
                                 <option key={channel} value={channel}>{RETURN_CHANNEL_LABELS[channel]}</option>
                             ))}
                         </select>
-                    </label>
 
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">Tipo</span>
+                        {isSuper && (
+                            <select
+                                value={selectedAccountId}
+                                onChange={(event) => setSelectedAccountId(event.target.value)}
+                                className="h-8 min-w-[150px] rounded-md border border-gray-200 bg-gray-50 px-3 pr-8 text-xs font-semibold text-[#182344] outline-none hover:bg-white focus:ring-2 focus:ring-[#2d3277]/20"
+                            >
+                                <option value="">Selecione uma conta</option>
+                                {accounts.map((account) => (
+                                    <option key={account.id} value={account.id}>{account.name}</option>
+                                ))}
+                            </select>
+                        )}
+
                         <select
                             value={filters.returnType}
                             onChange={(event) => setFilters((current) => ({ ...current, returnType: event.target.value }))}
-                            className="mt-1 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
+                            className="h-8 rounded-md border border-gray-200 bg-gray-50 px-3 pr-8 text-xs font-semibold text-[#182344] outline-none hover:bg-white focus:ring-2 focus:ring-[#2d3277]/20"
                         >
-                            <option value="all">Todos</option>
+                            <option value="all">Tipo Frete</option>
                             {RETURN_TYPES.map((type) => (
                                 <option key={type} value={type}>{RETURN_TYPE_LABELS[type]}</option>
                             ))}
                         </select>
-                    </label>
 
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">Status</span>
                         <select
                             value={filters.status}
                             onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
-                            className="mt-1 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
+                            className="h-8 rounded-md border border-gray-200 bg-gray-50 px-3 pr-8 text-xs font-semibold text-[#182344] outline-none hover:bg-white focus:ring-2 focus:ring-[#2d3277]/20"
                         >
-                            <option value="all">Todos</option>
+                            <option value="all">Todos Status</option>
                             {RETURN_STATUSES.map((status) => (
                                 <option key={status} value={status}>{RETURN_STATUS_LABELS[status]}</option>
                             ))}
                         </select>
-                    </label>
+                    </div>
 
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">De</span>
-                        <input
-                            type="date"
-                            value={filters.dateFrom}
-                            onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))}
-                            className="mt-1 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
-                        />
-                    </label>
-
-                    <label className="block">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase">Até</span>
-                        <input
-                            type="date"
-                            value={filters.dateTo}
-                            onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))}
-                            className="mt-1 w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2d3277]/20"
-                        />
-                    </label>
-                </div>
-
-                <div className="mt-3 flex justify-end">
                     <button
                         onClick={clearFilters}
-                        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-50 rounded-lg"
+                        disabled={activeFilterCount === 0}
+                        className="inline-flex h-8 items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-[#2d3277] disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        <X className="w-4 h-4" />
-                        Limpar filtros
+                        <X className="h-3.5 w-3.5" />
+                        Limpar Filtros
                     </button>
                 </div>
-                    </div>
-                )}
             </section>
-
             {isLoading ? (
                 <div className="flex items-center justify-center py-24">
                     <Loader2 className="w-10 h-10 animate-spin text-[#2d3277]" />
@@ -1828,7 +2048,7 @@ export default function ReturnsPage() {
                 </div>
             ) : (
                 <div className="overflow-x-auto pb-3">
-                    <div className={`grid grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 min-w-[1680px] min-h-[520px] ${isFiltersOpen ? "h-[calc(100vh-360px)]" : "h-[calc(100vh-230px)]"}`}>
+                    <div className="grid grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 min-w-[1680px] min-h-[520px] h-[calc(100vh-300px)]">
                         {RETURN_STATUSES.map((status) => {
                             const columnItems = groupedReturns.get(status) || [];
                             return (
