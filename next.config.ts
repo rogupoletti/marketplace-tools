@@ -24,6 +24,21 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: "/shopee",
+        destination: "/calculators/shopee",
+        permanent: false,
+      },
+      {
+        source: "/meli",
+        destination: "/calculators/meli",
+        permanent: false,
+      },
+      {
+        source: "/amazon",
+        destination: "/calculators/amazon",
+        permanent: false,
+      },
+      {
         source: "/api/cadastros/:path*",
         destination: "/api/catalog/:path*",
         permanent: false,

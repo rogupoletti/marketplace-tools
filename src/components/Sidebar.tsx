@@ -70,7 +70,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
         ? "reposFull"
         : pathname.startsWith("/returns")
             ? "returns"
-            : ["/shopee", "/meli", "/amazon"].includes(pathname)
+            : pathname.startsWith("/calculators")
                 ? "calculadoras"
                 : pathname.startsWith("/integrations")
                     ? "integracoes"
@@ -136,9 +136,9 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isHovered, setIsH
                     isOpen: isDropdownOpen("calculadoras"),
                     toggle: () => toggleDropdown("calculadoras"),
                     subItems: [
-                        { name: "Shopee", href: "/shopee" },
-                        { name: "Mercado Livre", href: "/meli" },
-                        { name: "Amazon", href: "/amazon" },
+                        { name: "Shopee", href: "/calculators/shopee" },
+                        { name: "Mercado Livre", href: "/calculators/meli" },
+                        { name: "Amazon", href: "/calculators/amazon" },
                     ],
                 },
             ],

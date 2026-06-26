@@ -1,18 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useState } from "react";
 import { useUI } from "@/lib/ui-context";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import { MELI_CATEGORIES, MELI_LOGISTICS, getMeliFlatFee, MELI_FULL_STORAGE_SIZES, MELI_SUPER_STORAGE_SIZES } from "@/data/meliData";
+import { MELI_LOGISTICS, getMeliFlatFee, MELI_FULL_STORAGE_SIZES, MELI_SUPER_STORAGE_SIZES } from "@/data/meliData";
 
 const FLAT_FEE_THRESHOLD = 79.00;
 
 export default function MeliPage() {
-    const { user, loading } = useAuth();
     const { showAlert } = useUI();
-    const router = useRouter();
 
     const [mode, setMode] = useState<"suggest" | "evaluate">("suggest");
     const [productCost, setProductCost] = useState<number | "">(150);
@@ -26,8 +21,8 @@ export default function MeliPage() {
     // Logistics
     const [shippingChannel, setShippingChannel] = useState("full");
     const [weight, setWeight] = useState<number | "">(1.5);
-    const [manualFreight, setManualFreight] = useState(false);
-    const [manualFreightCost, setManualFreightCost] = useState<number | "">(25);
+    const [manualFreight] = useState(false);
+    const [manualFreightCost] = useState<number | "">(25);
     const [flexFreightCost, setFlexFreightCost] = useState<number | "">(15);
     const [offerFreeShipping, setOfferFreeShipping] = useState(false);
     const [isSuperCategory, setIsSuperCategory] = useState(false); // Only used for Full
@@ -123,10 +118,8 @@ export default function MeliPage() {
         return bestPrice;
     };
 
-    const results = useMemo(() => {
-        const price = mode === "suggest" ? solvePriceForMargin(Number(targetMargin) || 0, adType) : Number(currentPrice) || 0;
-        return calculateScenario(price, adType);
-    }, [mode, productCost, targetMargin, currentPrice, commissionClassic, specialCategory, adType, shippingChannel, flexFreightCost, weight, manualFreight, manualFreightCost, offerFreeShipping, isSuperCategory, advancedEnabled, adsPct, returnPct, erpPct, taxesPct, storageDays, productSizeFull]);
+    const price = mode === "suggest" ? solvePriceForMargin(Number(targetMargin) || 0, adType) : Number(currentPrice) || 0;
+    const results = calculateScenario(price, adType);
 
     const fmtMoney = (val: number) => "R$ " + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtPct = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';

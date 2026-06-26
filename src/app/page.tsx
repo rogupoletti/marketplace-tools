@@ -14,7 +14,7 @@ export default function Home() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <Link
-          href="/shopee"
+          href="/calculators/shopee"
           className="group block p-8 bg-white rounded-2xl shadow-sm border border-gray-100 hover:border-primary hover:shadow-md transition-all"
         >
           <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-6 text-primary group-hover:bg-primary group-hover:text-white transition-colors">
@@ -35,7 +35,7 @@ export default function Home() {
         </Link>
 
         <Link
-          href="/meli"
+          href="/calculators/meli"
           className="group block p-8 bg-white rounded-2xl shadow-sm border border-gray-100 hover:border-meli-secondary hover:shadow-md transition-all"
         >
           <div className="w-12 h-12 bg-meli-secondary/10 rounded-xl flex items-center justify-center mb-6 text-meli-secondary group-hover:bg-meli-secondary group-hover:text-white transition-colors">
@@ -56,7 +56,7 @@ export default function Home() {
         </Link>
 
         <Link
-          href="/amazon"
+          href="/calculators/amazon"
           className="group block p-8 bg-white rounded-2xl shadow-sm border border-gray-100 hover:border-secondary hover:shadow-md transition-all"
         >
           <div className="w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center mb-6 text-secondary group-hover:bg-secondary group-hover:text-white transition-colors">

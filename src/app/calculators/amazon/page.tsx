@@ -1,15 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useState } from "react";
 import { useUI } from "@/lib/ui-context";
-import { useRouter } from "next/navigation";
 import { AMAZON_CATEGORIES, AMAZON_LOGISTICS, AMAZON_FBA_STORAGE_SIZES } from "@/data/amazonData";
 
 export default function AmazonPage() {
-    const { user, loading } = useAuth();
     const { showAlert } = useUI();
-    const router = useRouter();
 
     const [mode, setMode] = useState<"suggest" | "evaluate">("suggest");
     const [productCost, setProductCost] = useState<number | "">(150);
@@ -131,10 +127,8 @@ export default function AmazonPage() {
         return bestPrice;
     };
 
-    const results = useMemo(() => {
-        const price = mode === "suggest" ? solvePriceForMargin(Number(targetMargin) || 0) : Number(currentPrice) || 0;
-        return calculateScenario(price);
-    }, [mode, productCost, targetMargin, currentPrice, selectedCategory, plan, shippingChannel, weight, productSize, storageDays, manualFreightCost, installments, advancedEnabled, adsPct, returnPct, erpPct, taxesPct]);
+    const price = mode === "suggest" ? solvePriceForMargin(Number(targetMargin) || 0) : Number(currentPrice) || 0;
+    const results = calculateScenario(price);
 
     const fmtMoney = (val: number) => "R$ " + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtPct = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
@@ -275,7 +269,7 @@ export default function AmazonPage() {
                                 <label className="block text-sm font-semibold text-gray-700 mb-2">Canal de Envio</label>
                                 <select
                                     value={shippingChannel}
-                                    onChange={(e) => setShippingChannel(e.target.value as any)}
+                                    onChange={(e) => setShippingChannel(e.target.value as "dba" | "fba" | "fba_onsite" | "seller")}
                                     className="block w-full py-2 px-3 border border-gray-300 rounded-md focus:ring-secondary focus:border-secondary text-sm"
                                 >
                                     <option value="dba">DBA - Delivery by Amazon</option>

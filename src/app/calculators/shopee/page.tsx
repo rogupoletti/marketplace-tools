@@ -1,17 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useState } from "react";
 import { useUI } from "@/lib/ui-context";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
 import { SHOPEE_RATES } from "@/data/shopeeData";
 
 
 export default function ShopeeCalculator() {
-    const { user, loading } = useAuth();
     const { showAlert } = useUI();
-    const router = useRouter();
 
     const [mode, setMode] = useState<"suggest" | "evaluate">("suggest");
     const [productCost, setProductCost] = useState<number | "">(150);
@@ -95,10 +90,8 @@ export default function ShopeeCalculator() {
         return bestPrice;
     };
 
-    const results = useMemo(() => {
-        const price = mode === "suggest" ? solvePriceForMargin(Number(targetMargin) || 0) : Number(currentPrice) || 0;
-        return calculateScenario(price);
-    }, [mode, productCost, targetMargin, currentPrice, shippingChannel, manualFreightCost, advancedEnabled, adsPct, returnPct, erpPct, taxesPct]);
+    const price = mode === "suggest" ? solvePriceForMargin(Number(targetMargin) || 0) : Number(currentPrice) || 0;
+    const results = calculateScenario(price);
 
     const fmtMoney = (val: number) => "R$ " + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtPct = (val: number) => val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';

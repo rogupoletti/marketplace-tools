@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -9,12 +10,20 @@ interface HeaderProps {
 }
 
 export default function Header({ brand = "default" }: HeaderProps) {
+    const pathname = usePathname();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const { user, userData, logout } = useAuth();
+    const routeBrand = pathname?.startsWith("/calculators/shopee")
+        ? "shopee"
+        : pathname?.startsWith("/calculators/meli")
+            ? "meli"
+            : pathname?.startsWith("/calculators/amazon")
+                ? "amazon"
+                : brand;
 
-    const isShopee = brand === "shopee";
-    const isMeli = brand === "meli";
-    const isAmazon = brand === "amazon";
+    const isShopee = routeBrand === "shopee";
+    const isMeli = routeBrand === "meli";
+    const isAmazon = routeBrand === "amazon";
 
     const brandName = isShopee ? "Shopee Pro" : isMeli ? "Mercado Livre Pro" : isAmazon ? "Amazon Pro" : "Seller Dock";
     const brandColor = isShopee ? "text-primary" : isMeli ? "text-meli-secondary" : isAmazon ? "text-[#FF9900]" : "text-gray-900";
@@ -79,13 +88,13 @@ export default function Header({ brand = "default" }: HeaderProps) {
                         </button>
 
                         <div className="absolute top-full left-0 w-48 bg-white rounded-b-xl shadow-lg border border-gray-100 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                            <Link href="/shopee" className={`block px-4 py-2 text-sm font-medium ${isShopee ? 'text-primary bg-orange-50' : 'text-gray-600'} hover:text-primary hover:bg-gray-50 transition-colors cursor-pointer`}>
+                            <Link href="/calculators/shopee" className={`block px-4 py-2 text-sm font-medium ${isShopee ? 'text-primary bg-orange-50' : 'text-gray-600'} hover:text-primary hover:bg-gray-50 transition-colors cursor-pointer`}>
                                 Shopee
                             </Link>
-                            <Link href="/meli" className={`block px-4 py-2 text-sm font-medium ${isMeli ? 'text-meli-secondary bg-blue-50' : 'text-gray-600'} hover:text-meli-secondary hover:bg-gray-50 transition-colors cursor-pointer`}>
+                            <Link href="/calculators/meli" className={`block px-4 py-2 text-sm font-medium ${isMeli ? 'text-meli-secondary bg-blue-50' : 'text-gray-600'} hover:text-meli-secondary hover:bg-gray-50 transition-colors cursor-pointer`}>
                                 Mercado Livre
                             </Link>
-                            <Link href="/amazon" className={`block px-4 py-2 text-sm font-medium ${isAmazon ? 'text-[#FF9900] bg-yellow-50' : 'text-gray-600'} hover:text-[#FF9900] hover:bg-gray-50 transition-colors cursor-pointer`}>
+                            <Link href="/calculators/amazon" className={`block px-4 py-2 text-sm font-medium ${isAmazon ? 'text-[#FF9900] bg-yellow-50' : 'text-gray-600'} hover:text-[#FF9900] hover:bg-gray-50 transition-colors cursor-pointer`}>
                                 Amazon
                             </Link>
                         </div>
@@ -130,21 +139,21 @@ export default function Header({ brand = "default" }: HeaderProps) {
                             Home
                         </Link>
                         <Link
-                            href="/shopee"
+                            href="/calculators/shopee"
                             onClick={() => setIsMenuOpen(false)}
                             className={`block px-3 py-2 rounded-md text-base font-medium ${isShopee ? 'text-primary bg-orange-50' : 'text-gray-600'} hover:text-primary hover:bg-gray-50 cursor-pointer`}
                         >
                             Shopee
                         </Link>
                         <Link
-                            href="/meli"
+                            href="/calculators/meli"
                             onClick={() => setIsMenuOpen(false)}
                             className={`block px-3 py-2 rounded-md text-base font-medium ${isMeli ? 'text-meli-secondary bg-blue-50' : 'text-gray-600'} hover:text-meli-secondary hover:bg-gray-50 cursor-pointer`}
                         >
                             Mercado Livre
                         </Link>
                         <Link
-                            href="/amazon"
+                            href="/calculators/amazon"
                             onClick={() => setIsMenuOpen(false)}
                             className={`block px-3 py-2 rounded-md text-base font-medium ${isAmazon ? 'text-[#FF9900] bg-yellow-50' : 'text-gray-600'} hover:text-[#FF9900] hover:bg-gray-50 cursor-pointer`}
                         >
