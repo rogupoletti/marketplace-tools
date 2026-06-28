@@ -9,7 +9,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "emulator:start": "firebase emulators:start",
+    "emulator:start:export": "firebase emulators:start --import=./.firebase-data --export-on-exit"
   },
   "dependencies": {
     "@zxing/browser": "^0.2.0",
